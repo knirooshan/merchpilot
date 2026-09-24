@@ -272,7 +272,7 @@ const Reports = () => {
               </h3>
               <p className="text-3xl font-bold text-blue-400">
                 {formatCurrency(
-                  stats.totalSales / (salesData?.salesList?.length || 1),
+                  stats.totalSales / (salesData?.orderCount || 1),
                   settings,
                 )}
               </p>

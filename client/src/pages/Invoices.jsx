@@ -20,6 +20,19 @@ import FilterBar from "../components/FilterBar";
 import DeliveryUpdateModal from "../components/DeliveryUpdateModal";
 import ErrorBoundary from "../ErrorBoundary";
 
+const STATUS_STYLES = {
+  draft: "bg-slate-800 text-slate-400 border border-slate-700",
+  pending: "bg-blue-900/50 text-blue-400 border border-blue-800",
+  sent: "bg-blue-900/50 text-blue-400 border border-blue-800",
+  partially_paid: "bg-amber-900/50 text-amber-400 border border-amber-800",
+  paid: "bg-green-900/50 text-green-400 border border-green-800",
+  overdue: "bg-red-900/50 text-red-400 border border-red-800",
+  cancelled: "bg-slate-700/50 text-slate-300 border border-slate-600",
+  "written-off": "bg-purple-900/50 text-purple-400 border border-purple-800",
+  refunded: "bg-pink-900/50 text-pink-400 border border-pink-800",
+  deleted: "bg-slate-800 text-slate-500 border border-slate-700",
+};
+
 const Invoices = () => {
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
@@ -253,11 +266,8 @@ const Invoices = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
                       className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        invoice.status === "paid"
-                          ? "bg-green-900/50 text-green-400 border border-green-800"
-                          : invoice.status === "overdue"
-                            ? "bg-red-900/50 text-red-400 border border-red-800"
-                            : "bg-yellow-900/50 text-yellow-400 border border-yellow-800"
+                        STATUS_STYLES[invoice.status] ||
+                        "bg-slate-800 text-slate-400 border border-slate-700"
                       }`}
                     >
                       {invoice.status
