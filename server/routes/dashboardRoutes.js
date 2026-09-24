@@ -57,8 +57,12 @@ router.get("/stats", protect, async (req, res) => {
     const expenseMatch = {};
     if (start) expenseMatch.date = { $gte: start, $lte: end };
 
-    // Exclude deleted and cancelled invoices; use invoiceDate for period filtering
-    const invoiceMatch = { status: { $nin: ["deleted", "cancelled"] } };
+    // Exclude deleted and cancelled invoices; only count invoices with at
+    // least 1 payment as an "order"; use invoiceDate for period filtering
+    const invoiceMatch = {
+      status: { $nin: ["deleted", "cancelled"] },
+      amountPaid: { $gt: 0 },
+    };
     if (start) invoiceMatch.invoiceDate = { $gte: start, $lte: end };
 
     // Period sales - use find() + reduce for reliability

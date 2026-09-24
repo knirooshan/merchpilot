@@ -24,9 +24,12 @@ const getDashboardStats = async (req, res) => {
       "written-off",
     ];
 
-    // Get valid invoice IDs for filtering payments
+    // Get valid invoice IDs for filtering payments - only invoices that have
+    // received at least 1 payment count as an "order" (written-off invoices
+    // only count if they were paid at least once before being written off)
     const validInvoices = await Invoice.find({
       status: { $in: allowedStatuses },
+      amountPaid: { $gt: 0 },
     }).select("_id");
     const validInvoiceIds = validInvoices.map((inv) => inv._id);
 
@@ -110,9 +113,12 @@ const getSalesReport = async (req, res) => {
       "written-off",
     ];
 
-    // Get valid invoice IDs for filtering payments
+    // Get valid invoice IDs for filtering payments - only invoices that have
+    // received at least 1 payment count as an "order" (written-off invoices
+    // only count if they were paid at least once before being written off)
     const validInvoices = await Invoice.find({
       status: { $in: allowedStatuses },
+      amountPaid: { $gt: 0 },
     }).select("_id");
     const validInvoiceIds = validInvoices.map((inv) => inv._id);
 
@@ -209,6 +215,11 @@ const getSalesReport = async (req, res) => {
       .populate("customer", "firstName lastName billing")
       .populate("invoice", "invoiceNumber");
 
+    // Accurate order count = distinct invoices with >=1 payment (not raw payment count)
+    const orderCount = new Set(
+      salesList.filter((p) => p.invoice).map((p) => p.invoice._id.toString()),
+    ).size;
+
     // 5. Product Breakdown (from Invoices in the same period)
     // Adjust dateFilter for Invoice (using invoiceDate)
     const invoiceDateFilter = {};
@@ -224,7 +235,7 @@ const getSalesReport = async (req, res) => {
     }
 
     const productBreakdown = await Invoice.aggregate([
-      { $match: { status: { $in: allowedStatuses }, ...invoiceDateFilter } },
+      { $match: { _id: { $in: validInvoiceIds }, ...invoiceDateFilter } },
       { $unwind: "$items" },
       {
         $group: {
@@ -242,6 +253,7 @@ const getSalesReport = async (req, res) => {
     res.json({
       chartData,
       salesList,
+      orderCount,
       productBreakdown,
     });
   } catch (error) {
@@ -264,9 +276,12 @@ const getProfitLossReport = async (req, res) => {
       "written-off",
     ];
 
-    // Get valid invoice IDs for filtering payments
+    // Get valid invoice IDs for filtering payments - only invoices that have
+    // received at least 1 payment count as an "order" (written-off invoices
+    // only count if they were paid at least once before being written off)
     const validInvoices = await Invoice.find({
       status: { $in: allowedStatuses },
+      amountPaid: { $gt: 0 },
     }).select("_id");
     const validInvoiceIds = validInvoices.map((inv) => inv._id);
 
