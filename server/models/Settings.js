@@ -39,6 +39,7 @@ const settingsSchema = new mongoose.Schema(
     tax: {
       rate: { type: Number, default: 0, min: 0, max: 100 }, // Tax rate as percentage (0-100)
       label: { type: String, default: "Tax" }, // Label for tax (e.g., "VAT", "GST", "Sales Tax")
+      registered: { type: Boolean, default: false }, // Registered for VAT/tax; unregistered suppliers can't issue "Tax Invoices"
       defaultMethod: {
         type: String,
         default: "exclusive",

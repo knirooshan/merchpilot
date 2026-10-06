@@ -9,6 +9,7 @@ import {
 } from "@react-pdf/renderer";
 import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
 import { formatDate } from "../utils/date";
+import { getTaxDisplay } from "../utils/taxDisplay";
 import { renderHtmlToPdf } from "../utils/pdfUtils.jsx";
 
 const styles = StyleSheet.create({
@@ -203,6 +204,7 @@ const styles = StyleSheet.create({
 
 const QuotationPDF = ({ quotation, settings }) => {
   const effectiveSettings = getDocumentCurrencySettings(quotation, settings);
+  const taxInfo = getTaxDisplay(quotation, settings);
   return (
     <Document>
       <Page size="A4" style={styles.page}>
@@ -461,16 +463,12 @@ const QuotationPDF = ({ quotation, settings }) => {
               {formatCurrency(quotation.subtotal, effectiveSettings)}
             </Text>
           </View>
-          {quotation.tax > 0 && (
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>
-                {settings?.tax?.label || "Tax"}
-              </Text>
-              <Text style={styles.totalValue}>
-                {formatCurrency(quotation.tax, effectiveSettings)}
-              </Text>
-            </View>
-          )}
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>{taxInfo.lineLabel}</Text>
+            <Text style={styles.totalValue}>
+              {formatCurrency(quotation.tax || 0, effectiveSettings)}
+            </Text>
+          </View>
           {quotation.discount > 0 && (
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Discount</Text>

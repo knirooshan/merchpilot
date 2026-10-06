@@ -15,6 +15,7 @@ import { useSelector } from "react-redux";
 import QuotationPDF from "../components/QuotationPDF";
 import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
 import { formatDate } from "../utils/date";
+import { getTaxDisplay } from "../utils/taxDisplay";
 import { urlToBase64 } from "../utils/imageUtils";
 
 const QuotationView = () => {
@@ -399,16 +400,14 @@ const QuotationView = () => {
               {formatCurrency(quotation.subtotal, effectiveSettings)}
             </span>
           </div>
-          {quotation.tax > 0 && (
-            <div className="flex justify-between w-64">
-              <span className="text-slate-600">
-                {settings?.tax?.label || "Tax"}:
-              </span>
-              <span className="font-medium text-slate-900">
-                {formatCurrency(quotation.tax, effectiveSettings)}
-              </span>
-            </div>
-          )}
+          <div className="flex justify-between w-64">
+            <span className="text-slate-600">
+              {getTaxDisplay(quotation, settings).lineLabel}:
+            </span>
+            <span className="font-medium text-slate-900">
+              {formatCurrency(quotation.tax || 0, effectiveSettings)}
+            </span>
+          </div>
           {quotation.discount > 0 && (
             <div className="flex justify-between w-64">
               <span className="text-slate-600">Discount:</span>

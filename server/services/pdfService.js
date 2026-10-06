@@ -1,5 +1,6 @@
 const PDFDocument = require("pdfkit");
 const axios = require("axios");
+const { getTaxDisplay } = require("../utils/taxDisplay");
 
 // ---------------------------------------------------------------------------
 // Number to Words (LKR-style)
@@ -281,17 +282,25 @@ const addTableRow = (doc, y, item, settings, isLast = false, rowIndex = 0) => {
 const generateInvoicePDF = async (invoice, settings) => {
   return new Promise(async (resolve, reject) => {
     try {
+      const taxInfo = getTaxDisplay(invoice, settings);
+      // Only VAT-registered suppliers may issue a "Tax Invoice"
+      const docTypeName =
+        invoice.invoiceType === "proforma"
+          ? "Proforma Invoice"
+          : taxInfo.registered
+            ? "Tax Invoice"
+            : "Invoice";
       const doc = new PDFDocument({
         size: "A4",
         margin: 36,
         bufferPages: true,
         info: {
-          Title: `${invoice.invoiceType === "proforma" ? "Proforma Invoice" : "Tax Invoice"} ${invoice.taxInvoiceNumber || invoice.invoiceNumber}`,
+          Title: `${docTypeName} ${invoice.taxInvoiceNumber || invoice.invoiceNumber}`,
           Author: settings?.storeName || "MerchPilot",
           Subject:
-            invoice.invoiceType === "proforma"
-              ? "Proforma Invoice"
-              : "Tax Invoice - IRD Sri Lanka Gazette 2481/22",
+            docTypeName === "Tax Invoice"
+              ? "Tax Invoice - IRD Sri Lanka Gazette 2481/22"
+              : docTypeName,
         },
       });
 
@@ -310,7 +319,7 @@ const generateInvoicePDF = async (invoice, settings) => {
       // ── HEADER ──────────────────────────────────────────────────────────
       // Invoice title (left)
       const isProforma = invoice.invoiceType === "proforma";
-      const invoiceTitleText = isProforma ? "PROFORMA INVOICE" : "TAX INVOICE";
+      const invoiceTitleText = docTypeName.toUpperCase();
       doc
         .fillColor(isProforma ? "#065F46" : "#1E3A8A")
         .fontSize(18)
@@ -319,9 +328,7 @@ const generateInvoicePDF = async (invoice, settings) => {
 
       // Invoice Number below title
       const taxInvNo = invoice.taxInvoiceNumber || invoice.invoiceNumber;
-      const invoiceNoLabel = isProforma
-        ? "Proforma Invoice No."
-        : "Tax Invoice No.";
+      const invoiceNoLabel = `${docTypeName} No.`;
       doc
         .fillColor("#6B7280")
         .fontSize(9)
@@ -607,12 +614,10 @@ const generateInvoicePDF = async (invoice, settings) => {
         formatCurrency(invoice.subtotal, settings),
       );
 
-      if (invoice.tax > 0) {
-        drawTotalRow(
-          settings?.tax?.label || "Tax",
-          formatCurrency(invoice.tax, settings),
-        );
-      }
+      drawTotalRow(
+        taxInfo.lineLabel,
+        formatCurrency(invoice.tax || 0, settings),
+      );
       if (invoice.discount > 0) {
         drawTotalRow(
           "Discount",
@@ -782,7 +787,7 @@ const generateInvoicePDF = async (invoice, settings) => {
           .fillColor("#9CA3AF")
           .fontSize(6.5)
           .text(
-            `This is a computer-generated ${invoice.invoiceType === "proforma" ? "Proforma Invoice" : "Tax Invoice"}. No signature is required. | Page ${i + 1} of ${range.count}`,
+            `This is a computer-generated ${docTypeName}. No signature is required. | Page ${i + 1} of ${range.count}`,
             LEFT,
             doc.page.height - 18,
             { width: PAGE_WIDTH, align: "center" },
@@ -1062,22 +1067,21 @@ const generateQuotationPDF = async (quotation, settings) => {
           align: "right",
         });
 
-      // Tax
-      if (quotation.tax > 0) {
-        tableY += 20;
-        doc
-          .fillColor("#6B7280")
-          .text(settings?.tax?.label || "Tax", totalsX - 100, tableY, {
-            width: 100,
-            align: "right",
-          });
-        doc
-          .fillColor("#111827")
-          .text(formatCurrency(quotation.tax, settings), totalsX, tableY, {
-            width: 125,
-            align: "right",
-          });
-      }
+      // Tax (always shown, even at 0%)
+      const quotationTaxInfo = getTaxDisplay(quotation, settings);
+      tableY += 20;
+      doc
+        .fillColor("#6B7280")
+        .text(quotationTaxInfo.lineLabel, totalsX - 150, tableY, {
+          width: 150,
+          align: "right",
+        });
+      doc
+        .fillColor("#111827")
+        .text(formatCurrency(quotation.tax || 0, settings), totalsX, tableY, {
+          width: 125,
+          align: "right",
+        });
 
       // Discount
       if (quotation.discount > 0) {

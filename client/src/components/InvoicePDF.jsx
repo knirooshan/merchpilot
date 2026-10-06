@@ -9,6 +9,7 @@ import {
 } from "@react-pdf/renderer";
 import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
 import { formatDate } from "../utils/date";
+import { getTaxDisplay } from "../utils/taxDisplay";
 import { renderHtmlToPdf } from "../utils/pdfUtils.jsx";
 
 // ---------------------------------------------------------------------------
@@ -426,6 +427,12 @@ const InvoicePDF = ({ invoice, settings }) => {
       ? invoice.balanceDue
       : invoice.total - amountPaid;
 
+  const taxInfo = getTaxDisplay(invoice, settings);
+  const documentTitle = isProforma
+    ? "Proforma Invoice"
+    : taxInfo.registered
+      ? "Tax Invoice"
+      : "Invoice";
   const supplierTIN = settings?.taxIdNo || "";
   const purchaserTIN =
     invoice.customer?.taxNumber || invoice.customerInfo?.taxNumber || "";
@@ -472,10 +479,10 @@ const InvoicePDF = ({ invoice, settings }) => {
             <Text
               style={isProforma ? styles.titleTextProforma : styles.titleText}
             >
-              {isProforma ? "PROFORMA INVOICE" : "TAX INVOICE"}
+              {isProforma ? "PROFORMA INVOICE" : documentTitle.toUpperCase()}
             </Text>
             <Text style={styles.taxInvNoLabel}>
-              {isProforma ? "Proforma Invoice No." : "Tax Invoice No."}
+              {`${documentTitle} No.`}
             </Text>
             <Text
               style={
@@ -710,17 +717,13 @@ const InvoicePDF = ({ invoice, settings }) => {
               </Text>
             </View>
 
-            {/* Tax (only shown if business charges tax) */}
-            {invoice.tax > 0 && (
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabelText}>
-                  {settings?.tax?.label || "Tax"}
-                </Text>
-                <Text style={styles.totalValueText}>
-                  {formatCurrency(invoice.tax, effectiveSettings)}
-                </Text>
-              </View>
-            )}
+            {/* Tax line is always shown, even at 0% */}
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabelText}>{taxInfo.lineLabel}</Text>
+              <Text style={styles.totalValueText}>
+                {formatCurrency(invoice.tax || 0, effectiveSettings)}
+              </Text>
+            </View>
 
             {/* Discount */}
             {invoice.discount > 0 && (
@@ -856,9 +859,7 @@ const InvoicePDF = ({ invoice, settings }) => {
             </View>
           )}
           <Text style={styles.footerNote}>
-            {isProforma
-              ? "This is a computer-generated Proforma Invoice. No signature is required."
-              : "This is a computer-generated Tax Invoice. No signature is required."}
+            {`This is a computer-generated ${documentTitle}. No signature is required.`}
           </Text>
         </View>
       </Page>

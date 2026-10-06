@@ -18,6 +18,7 @@ import DeliveryReceiptPDF from "../components/DeliveryReceiptPDF";
 import PaymentModal from "../components/PaymentModal";
 import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
 import { formatDate } from "../utils/date";
+import { getTaxDisplay } from "../utils/taxDisplay";
 import { urlToBase64 } from "../utils/imageUtils";
 import DeliveryUpdateModal from "../components/DeliveryUpdateModal";
 
@@ -281,7 +282,9 @@ const InvoiceView = () => {
             <h1 className="text-2xl font-bold text-slate-900 mb-2">
               {invoice.invoiceType === "proforma"
                 ? "PROFORMA INVOICE"
-                : "TAX INVOICE"}
+                : getTaxDisplay(invoice, settings).registered
+                  ? "TAX INVOICE"
+                  : "INVOICE"}
             </h1>
             <p className="text-slate-600">#{invoice.invoiceNumber}</p>
             <p className="text-slate-600">
@@ -469,16 +472,14 @@ const InvoiceView = () => {
               {formatCurrency(invoice.subtotal, effectiveSettings)}
             </span>
           </div>
-          {invoice.tax > 0 && (
-            <div className="flex justify-between w-64">
-              <span className="text-slate-600">
-                {settings?.tax?.label || "Tax"}:
-              </span>
-              <span className="text-slate-900">
-                {formatCurrency(invoice.tax, effectiveSettings)}
-              </span>
-            </div>
-          )}
+          <div className="flex justify-between w-64">
+            <span className="text-slate-600">
+              {getTaxDisplay(invoice, settings).lineLabel}:
+            </span>
+            <span className="text-slate-900">
+              {formatCurrency(invoice.tax || 0, effectiveSettings)}
+            </span>
+          </div>
           {invoice.discount > 0 && (
             <div className="flex justify-between w-64">
               <span className="text-slate-600">Discount:</span>
