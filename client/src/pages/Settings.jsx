@@ -33,7 +33,12 @@ const Settings = () => {
     smtp: { host: "", port: 587, user: "", pass: "", secure: false },
     bank: { accountName: "", accountNumber: "", bankName: "", branch: "" },
     currency: { code: "USD", symbol: "$", position: "before" },
-    tax: { rate: 0, label: "Tax", defaultMethod: "exclusive" },
+    tax: {
+      rate: 0,
+      label: "Tax",
+      defaultMethod: "exclusive",
+      registered: false,
+    },
     dateTime: { dateFormat: "MM/DD/YYYY", timeFormat: "12h", timezone: "UTC" },
     terms: { invoice: "", quotation: "", deliveryReceipt: "" },
     ird: { departmentCode: "BR01", placeOfSupply: "" },
@@ -455,6 +460,22 @@ const Settings = () => {
               </select>
               <p className="mt-1 text-xs text-slate-400">
                 Default tax method for new items on invoices and quotations
+              </p>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="flex items-center text-sm font-medium text-slate-300">
+                <input
+                  type="checkbox"
+                  name="registered"
+                  checked={!!formData.tax.registered}
+                  onChange={(e) => handleChange(e, "tax")}
+                  className="mr-2 h-4 w-4 rounded border-slate-700 bg-slate-950 text-blue-600 focus:ring-blue-600"
+                />
+                Registered for VAT / tax
+              </label>
+              <p className="mt-1 text-xs text-slate-400">
+                Only VAT-registered suppliers may issue a "TAX INVOICE" (IRD
+                Gazette 2481/22). If unchecked, invoices are titled "INVOICE".
               </p>
             </div>
           </div>
