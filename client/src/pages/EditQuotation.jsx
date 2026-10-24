@@ -156,7 +156,7 @@ const EditQuotation = () => {
         },
         config,
       );
-      navigate("/quotations");
+      navigate(`/quotations/${id}`);
     } catch (error) {
       console.error("Error updating quotation:", error);
     }

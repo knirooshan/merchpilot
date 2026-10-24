@@ -179,7 +179,7 @@ const EditInvoice = () => {
         },
         config,
       );
-      navigate("/invoices");
+      navigate(`/invoices/${id}`);
     } catch (error) {
       console.error("Error updating invoice:", error);
     }
