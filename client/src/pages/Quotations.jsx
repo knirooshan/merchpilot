@@ -8,6 +8,8 @@ import { formatCurrency } from "../utils/currency";
 import { formatDate } from "../utils/date";
 import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
+import Pagination from "../components/Pagination";
+import { useDebounce } from "../utils/useDebounce";
 
 const Quotations = () => {
   const { user } = useSelector((state) => state.auth);
@@ -16,23 +18,30 @@ const Quotations = () => {
   const [quotations, setQuotations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalQuotations, setTotalQuotations] = useState(0);
   const [filters, setFilters] = useState({
     status: "all",
     startDate: "",
     endDate: "",
   });
 
-  useEffect(() => {
-    fetchData();
-  }, [search, filters]);
-
   const fetchData = async () => {
     try {
+      setLoading(true);
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      const params = new URLSearchParams();
-      if (search) params.append("search", search);
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize),
+      });
+      if (debouncedSearch && debouncedSearch.trim()) {
+        params.append("search", debouncedSearch.trim());
+      }
       if (filters.status !== "all") params.append("status", filters.status);
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
@@ -42,13 +51,30 @@ const Quotations = () => {
         config
       );
 
-      setQuotations(quotationsRes.data);
+      const data = quotationsRes.data;
+      if (Array.isArray(data)) {
+        setQuotations(data);
+        setTotalQuotations(data.length);
+        setTotalPages(Math.ceil(data.length / pageSize) || 1);
+      } else {
+        setQuotations(data.quotations || data.data || []);
+        setTotalQuotations(data.total || 0);
+        setTotalPages(data.pages || 1);
+      }
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filters]);
+
+  useEffect(() => {
+    fetchData();
+  }, [page, pageSize, debouncedSearch, filters]);
 
   const resetFilters = () => {
     setSearch("");
@@ -191,9 +217,8 @@ const Quotations = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-white">
                     {quotation.customer?.firstName ||
-                    quotation.customer?.lastName
-                      ? `${quotation.customer.firstName || ""} ${
-                          quotation.customer.lastName || ""
+                      quotation.customer?.lastName
+                      ? `${quotation.customer.firstName || ""} ${quotation.customer.lastName || ""
                         }`.trim()
                       : quotation.customer?.billing?.company || "N/A"}
                   </td>
@@ -212,13 +237,12 @@ const Quotations = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
-                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        quotation.status === "sent"
-                          ? "bg-blue-900/50 text-blue-400 border border-blue-800"
-                          : quotation.status === "accepted"
+                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${quotation.status === "sent"
+                        ? "bg-blue-900/50 text-blue-400 border border-blue-800"
+                        : quotation.status === "accepted"
                           ? "bg-green-900/50 text-green-400 border border-green-800"
                           : "bg-slate-800 text-slate-400 border border-slate-700"
-                      }`}
+                        }`}
                     >
                       {quotation.status.charAt(0).toUpperCase() +
                         quotation.status.slice(1)}
@@ -261,11 +285,23 @@ const Quotations = () => {
             </tbody>
           </table>
         </div>
-        {quotations.length === 0 && (
+        {quotations.length === 0 && !loading && (
           <div className="p-6 text-center text-slate-500">
-            No quotations found. Create one to get started.
+            No quotations found. Try adjusting your search or create one to get started.
           </div>
         )}
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={totalQuotations}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          }}
+          itemName="quotations"
+        />
       </div>
     </div>
   );

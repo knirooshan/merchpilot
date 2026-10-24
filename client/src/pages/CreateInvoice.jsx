@@ -79,10 +79,8 @@ const CreateInvoice = () => {
           const {
             customer,
             items,
-            tax,
             discount,
             notes,
-            terms,
             deliveryNote,
             deliveryCharge,
             currency: quotationCurrency,
@@ -102,8 +100,8 @@ const CreateInvoice = () => {
               const productId = item.product?._id || item.product;
               const matchedProduct = productId
                 ? prodRes.data.find(
-                    (p) => p._id.toString() === productId.toString(),
-                  )
+                  (p) => p._id.toString() === productId.toString(),
+                )
                 : null;
 
               return {

@@ -10,10 +10,6 @@ const MediaGrid = ({ onSelect, selectable = false, refreshTrigger }) => {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
 
-  useEffect(() => {
-    fetchMedia();
-  }, [refreshTrigger]);
-
   const fetchMedia = async () => {
     try {
       const config = {
@@ -32,6 +28,10 @@ const MediaGrid = ({ onSelect, selectable = false, refreshTrigger }) => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchMedia();
+  }, [refreshTrigger]);
 
   const handleDelete = async (e, id) => {
     e.stopPropagation();
@@ -80,11 +80,10 @@ const MediaGrid = ({ onSelect, selectable = false, refreshTrigger }) => {
       {media.map((item) => (
         <div
           key={item._id}
-          className={`relative group aspect-square rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
-            selectable && selectedId === item._id
+          className={`relative group aspect-square rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectable && selectedId === item._id
               ? "border-blue-500 ring-2 ring-blue-500 ring-opacity-50"
               : "border-slate-800 hover:border-slate-600"
-          }`}
+            }`}
           onClick={() => handleSelect(item)}
         >
           <img

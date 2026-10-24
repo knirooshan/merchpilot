@@ -90,7 +90,7 @@ const Settings = () => {
       setMessage("Settings saved successfully!");
       dispatch(fetchSettings()); // Refresh settings in Redux
       setTimeout(() => setMessage(""), 3000);
-    } catch (error) {
+    } catch {
       setMessage("Error saving settings");
     } finally {
       setSaving(false);
@@ -115,11 +115,10 @@ const Settings = () => {
           )}
           {message && (
             <span
-              className={`px-4 py-2 rounded text-sm ${
-                message.includes("Error")
+              className={`px-4 py-2 rounded text-sm ${message.includes("Error")
                   ? "bg-red-900/50 text-red-200 border border-red-800"
                   : "bg-green-900/50 text-green-200 border border-green-800"
-              }`}
+                }`}
             >
               {message}
             </span>

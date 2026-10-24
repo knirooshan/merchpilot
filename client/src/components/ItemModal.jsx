@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { X, Search, Package, PlusCircle } from "lucide-react";
 import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
-import { calculateItemTax, getDiscountAmount } from "../utils/taxCalculations";
+import { calculateItemTax } from "../utils/taxCalculations";
 import RichTextEditor from "./RichTextEditor";
 
 const ItemModal = ({
@@ -52,6 +52,23 @@ const ItemModal = ({
     sku: "",
   });
 
+  const resetForm = () => {
+    setSelectedProduct(null);
+    setCustomItem({
+      name: "",
+      description: "",
+      price: 0,
+      quantity: 1,
+      discount: 0,
+      discountType: "fixed",
+      isTaxable: false,
+      taxMethod: defaultTaxMethod,
+      sku: "",
+    });
+    setSearchTerm("");
+    setActiveTab("existing");
+  };
+
   useEffect(() => {
     if (isOpen) {
       if (initialItem) {
@@ -91,23 +108,6 @@ const ItemModal = ({
       }
     }
   }, [initialItem, isOpen, products]);
-
-  const resetForm = () => {
-    setSelectedProduct(null);
-    setCustomItem({
-      name: "",
-      description: "",
-      price: 0,
-      quantity: 1,
-      discount: 0,
-      discountType: "fixed",
-      isTaxable: false,
-      taxMethod: defaultTaxMethod,
-      sku: "",
-    });
-    setSearchTerm("");
-    setActiveTab("existing");
-  };
 
   const filteredProducts = products.filter(
     (p) =>
@@ -157,21 +157,19 @@ const ItemModal = ({
 
         <div className="flex border-b border-slate-800">
           <button
-            className={`flex-1 py-3 text-sm font-medium ${
-              activeTab === "existing"
+            className={`flex-1 py-3 text-sm font-medium ${activeTab === "existing"
                 ? "text-blue-400 border-b-2 border-blue-400"
                 : "text-slate-400 hover:text-slate-200"
-            }`}
+              }`}
             onClick={() => setActiveTab("existing")}
           >
             Existing Product
           </button>
           <button
-            className={`flex-1 py-3 text-sm font-medium ${
-              activeTab === "custom"
+            className={`flex-1 py-3 text-sm font-medium ${activeTab === "custom"
                 ? "text-blue-400 border-b-2 border-blue-400"
                 : "text-slate-400 hover:text-slate-200"
-            }`}
+              }`}
             onClick={() => setActiveTab("custom")}
           >
             Custom Item

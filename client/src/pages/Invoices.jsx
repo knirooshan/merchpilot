@@ -19,6 +19,8 @@ import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
 import DeliveryUpdateModal from "../components/DeliveryUpdateModal";
 import ErrorBoundary from "../ErrorBoundary";
+import Pagination from "../components/Pagination";
+import { useDebounce } from "../utils/useDebounce";
 
 const STATUS_STYLES = {
   draft: "bg-slate-800 text-slate-400 border border-slate-700",
@@ -45,23 +47,30 @@ const Invoices = () => {
   const [selectedDeliveryInvoiceNo, setSelectedDeliveryInvoiceNo] =
     useState(null);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalInvoices, setTotalInvoices] = useState(0);
   const [filters, setFilters] = useState({
     status: "all",
     startDate: "",
     endDate: "",
   });
 
-  useEffect(() => {
-    fetchData();
-  }, [search, filters]);
-
   const fetchData = async () => {
     try {
+      setLoading(true);
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      const params = new URLSearchParams();
-      if (search) params.append("search", search);
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize),
+      });
+      if (debouncedSearch && debouncedSearch.trim()) {
+        params.append("search", debouncedSearch.trim());
+      }
       if (filters.status !== "all") params.append("status", filters.status);
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
@@ -71,13 +80,30 @@ const Invoices = () => {
         config,
       );
 
-      setInvoices(invoicesRes.data);
+      const data = invoicesRes.data;
+      if (Array.isArray(data)) {
+        setInvoices(data);
+        setTotalInvoices(data.length);
+        setTotalPages(Math.ceil(data.length / pageSize) || 1);
+      } else {
+        setInvoices(data.invoices || data.data || []);
+        setTotalInvoices(data.total || 0);
+        setTotalPages(data.pages || 1);
+      }
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filters]);
+
+  useEffect(() => {
+    fetchData();
+  }, [page, pageSize, debouncedSearch, filters]);
 
   const resetFilters = () => {
     setSearch("");
@@ -238,17 +264,15 @@ const Invoices = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-white">
                     {invoice.customer?.firstName || invoice.customer?.lastName
-                      ? `${invoice.customer.firstName || ""} ${
-                          invoice.customer.lastName || ""
+                      ? `${invoice.customer.firstName || ""} ${invoice.customer.lastName || ""
                         }`.trim()
                       : invoice.customer?.billing?.company ||
-                        invoice.customerInfo?.company ||
-                        (invoice.customerInfo?.firstName ||
+                      invoice.customerInfo?.company ||
+                      (invoice.customerInfo?.firstName ||
                         invoice.customerInfo?.lastName
-                          ? `${invoice.customerInfo.firstName || ""} ${
-                              invoice.customerInfo.lastName || ""
-                            }`.trim()
-                          : "N/A")}
+                        ? `${invoice.customerInfo.firstName || ""} ${invoice.customerInfo.lastName || ""
+                          }`.trim()
+                        : "N/A")}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-slate-400">
                     {invoice.invoiceDate
@@ -265,10 +289,9 @@ const Invoices = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
-                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        STATUS_STYLES[invoice.status] ||
+                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${STATUS_STYLES[invoice.status] ||
                         "bg-slate-800 text-slate-400 border border-slate-700"
-                      }`}
+                        }`}
                     >
                       {invoice.status
                         .replace("_", " ")
@@ -327,11 +350,23 @@ const Invoices = () => {
             </tbody>
           </table>
         </div>
-        {invoices.length === 0 && (
+        {invoices.length === 0 && !loading && (
           <div className="p-6 text-center text-slate-500">
-            No invoices found. Create one to get started.
+            No invoices found. Try adjusting your search or create one to get started.
           </div>
         )}
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={totalInvoices}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          }}
+          itemName="invoices"
+        />
       </div>
 
       {selectedInvoice && (

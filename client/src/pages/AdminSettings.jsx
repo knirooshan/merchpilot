@@ -77,7 +77,7 @@ const AdminSettings = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       toast.success("Settings saved successfully");
-    } catch (error) {
+    } catch {
       toast.error("Failed to save settings");
     } finally {
       setSaving(false);

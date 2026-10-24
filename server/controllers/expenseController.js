@@ -113,23 +113,49 @@ const uploadExpenseAttachment = [
   },
 ];
 
-// @desc    Get all expenses
+// @desc    Get all expenses (with optional server-side search, filters, and pagination)
 // @route   GET /api/expenses
 // @access  Private
 const getExpenses = async (req, res) => {
   try {
-    const { Expense } = getTenantModels(req.dbConnection);
-    const { search, category, vendor, startDate, endDate } = req.query;
+    const { Expense, Vendor } = getTenantModels(req.dbConnection);
+    const {
+      search,
+      category,
+      vendor,
+      startDate,
+      endDate,
+      page,
+      limit,
+      pageNumber,
+      pageSize,
+      paginate,
+    } = req.query;
+
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined ||
+      paginate === "true";
 
     // Build filter object
     const filter = {};
 
-    // Search in description, reference, or notes
-    if (search) {
+    // Search in description, reference, notes, or vendor name
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: "i" };
+
+      const matchingVendors = await Vendor.find({
+        name: searchRegex,
+      }).select("_id");
+      const matchingVendorIds = matchingVendors.map((v) => v._id);
+
       filter.$or = [
-        { description: { $regex: search, $options: "i" } },
-        { reference: { $regex: search, $options: "i" } },
-        { notes: { $regex: search, $options: "i" } },
+        { description: searchRegex },
+        { reference: searchRegex },
+        { notes: searchRegex },
+        { vendor: { $in: matchingVendorIds } },
       ];
     }
 
@@ -151,10 +177,31 @@ const getExpenses = async (req, res) => {
       if (endDate) filter.date.$lte = parseEndOfDay(endDate, timezone);
     }
 
+    if (!isPaginated) {
+      const expenses = await Expense.find(filter)
+        .populate("vendor", "name")
+        .sort({ date: -1, createdAt: -1 });
+      return res.json(expenses);
+    }
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
+
+    const total = await Expense.countDocuments(filter);
     const expenses = await Expense.find(filter)
       .populate("vendor", "name")
-      .sort({ date: -1, createdAt: -1 });
-    res.json(expenses);
+      .sort({ date: -1, createdAt: -1 })
+      .limit(perPage)
+      .skip((currentPage - 1) * perPage);
+
+    res.json({
+      expenses,
+      data: expenses,
+      total,
+      page: currentPage,
+      pages: Math.ceil(total / perPage),
+      limit: perPage,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

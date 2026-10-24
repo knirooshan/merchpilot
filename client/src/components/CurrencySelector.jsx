@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Globe } from "lucide-react";
 
 // Common international currencies
@@ -36,7 +35,6 @@ const CURRENCIES = [
  */
 const CurrencySelector = ({ settings, currency, exchangeRate, onChange }) => {
   const baseCurrencyCode = settings?.currency?.code || "LKR";
-  const [open, setOpen] = useState(false);
 
   const isBaseCurrency =
     !currency?.code || currency.code === baseCurrencyCode;

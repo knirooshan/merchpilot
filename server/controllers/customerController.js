@@ -1,30 +1,68 @@
 const { getTenantModels } = require("../models/tenantModels");
 const { getWooCustomers } = require("../services/wooService");
 
-// @desc    Get all customers
+// @desc    Get all customers (with optional server-side search and pagination)
 // @route   GET /api/customers
 // @access  Private
 const getCustomers = async (req, res) => {
   try {
     const { Customer } = getTenantModels(req.dbConnection);
-    const { search } = req.query;
+    const {
+      search,
+      page,
+      limit,
+      pageNumber,
+      pageSize,
+      paginate,
+    } = req.query;
+
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined ||
+      paginate === "true";
 
     // Build filter object
     const filter = {};
 
-    // Search in name, email, or phone
-    if (search) {
+    // Search in name, email, phone, company, address
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: "i" };
       filter.$or = [
-        { firstName: { $regex: search, $options: "i" } },
-        { lastName: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
-        { "billing.phone": { $regex: search, $options: "i" } },
-        { "billing.company": { $regex: search, $options: "i" } },
+        { firstName: searchRegex },
+        { lastName: searchRegex },
+        { email: searchRegex },
+        { "billing.phone": searchRegex },
+        { "billing.company": searchRegex },
+        { "billing.city": searchRegex },
+        { "shipping.phone": searchRegex },
+        { "shipping.company": searchRegex },
       ];
     }
 
-    const customers = await Customer.find(filter).sort({ createdAt: -1 });
-    res.json(customers);
+    if (!isPaginated) {
+      const customers = await Customer.find(filter).sort({ createdAt: -1 });
+      return res.json(customers);
+    }
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
+
+    const total = await Customer.countDocuments(filter);
+    const customers = await Customer.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(perPage)
+      .skip((currentPage - 1) * perPage);
+
+    res.json({
+      customers,
+      data: customers,
+      total,
+      page: currentPage,
+      pages: Math.ceil(total / perPage),
+      limit: perPage,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

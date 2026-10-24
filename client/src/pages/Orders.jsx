@@ -7,6 +7,8 @@ import { formatCurrency } from "../utils/currency";
 import { formatDate } from "../utils/date";
 import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
+import Pagination from "../components/Pagination";
+import { useDebounce } from "../utils/useDebounce";
 
 const Orders = () => {
   const { user } = useSelector((state) => state.auth);
@@ -15,6 +17,11 @@ const Orders = () => {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalOrders, setTotalOrders] = useState(0);
   const [filters, setFilters] = useState({
     status: "all",
     startDate: "",
@@ -22,16 +29,26 @@ const Orders = () => {
   });
 
   useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filters]);
+
+  useEffect(() => {
     fetchData();
-  }, [search, filters]);
+  }, [page, pageSize, debouncedSearch, filters]);
 
   const fetchData = async () => {
     try {
+      setLoading(true);
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      const params = new URLSearchParams();
-      if (search) params.append("search", search);
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize),
+      });
+      if (debouncedSearch && debouncedSearch.trim()) {
+        params.append("search", debouncedSearch.trim());
+      }
       if (filters.status !== "all") params.append("status", filters.status);
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
@@ -41,7 +58,16 @@ const Orders = () => {
         config
       );
 
-      setOrders(ordersRes.data);
+      const data = ordersRes.data;
+      if (Array.isArray(data)) {
+        setOrders(data);
+        setTotalOrders(data.length);
+        setTotalPages(Math.ceil(data.length / pageSize) || 1);
+      } else {
+        setOrders(data.orders || data.data || []);
+        setTotalOrders(data.total || 0);
+        setTotalPages(data.pages || 1);
+      }
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -82,7 +108,7 @@ const Orders = () => {
       console.error("Error syncing orders:", error);
       alert(
         error.response?.data?.message ||
-          "Failed to sync orders. Please check your WooCommerce settings."
+        "Failed to sync orders. Please check your WooCommerce settings."
       );
     } finally {
       setSyncing(false);
@@ -241,17 +267,15 @@ const Orders = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-white">
                       {order.customerInfo?.firstName ||
-                      order.customerInfo?.lastName ||
-                      order.customer?.firstName ||
-                      order.customer?.lastName
-                        ? `${
-                            order.customerInfo?.firstName ||
-                            order.customer?.firstName ||
-                            ""
-                          } ${
-                            order.customerInfo?.lastName ||
-                            order.customer?.lastName ||
-                            ""
+                        order.customerInfo?.lastName ||
+                        order.customer?.firstName ||
+                        order.customer?.lastName
+                        ? `${order.customerInfo?.firstName ||
+                          order.customer?.firstName ||
+                          ""
+                          } ${order.customerInfo?.lastName ||
+                          order.customer?.lastName ||
+                          ""
                           }`.trim()
                         : order.customer?.billing?.company || "N/A"}
                     </div>
@@ -306,9 +330,23 @@ const Orders = () => {
             </tbody>
           </table>
         </div>
-        {orders.length === 0 && (
-          <div className="p-6 text-center text-slate-500">No orders found.</div>
+        {orders.length === 0 && !loading && (
+          <div className="p-6 text-center text-slate-500">
+            No orders found. Try adjusting your search or filters.
+          </div>
         )}
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={totalOrders}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          }}
+          itemName="orders"
+        />
       </div>
 
       {!(
@@ -316,27 +354,27 @@ const Orders = () => {
         settings.modules &&
         settings.modules.woocommerce === false
       ) && (
-        <div className="bg-blue-900/20 border border-blue-800 rounded-lg p-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <ExternalLink className="h-5 w-5 text-blue-400" />
-            </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-blue-400">
-                WooCommerce Orders
-              </h3>
-              <div className="mt-2 text-sm text-slate-400">
-                <p>
-                  This page displays orders synced from your WooCommerce store.
-                  Click "Sync from WooCommerce" to fetch the latest orders. Make
-                  sure your WooCommerce credentials are configured in the server
-                  settings.
-                </p>
+          <div className="bg-blue-900/20 border border-blue-800 rounded-lg p-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <ExternalLink className="h-5 w-5 text-blue-400" />
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-blue-400">
+                  WooCommerce Orders
+                </h3>
+                <div className="mt-2 text-sm text-slate-400">
+                  <p>
+                    This page displays orders synced from your WooCommerce store.
+                    Click "Sync from WooCommerce" to fetch the latest orders. Make
+                    sure your WooCommerce credentials are configured in the server
+                    settings.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
     </div>
   );
 };

@@ -19,6 +19,8 @@ import { formatDate } from "../utils/date";
 import StatsCard from "../components/StatsCard";
 import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
+import Pagination from "../components/Pagination";
+import useDebounce from "../utils/useDebounce";
 
 const statusStyles = {
   overdue: "bg-red-900/50 text-red-400 border border-red-800",
@@ -77,7 +79,17 @@ const OutstandingInvoices = () => {
     status: "",
   });
   const [customerSearch, setCustomerSearch] = useState("");
+  const [invoiceSearch, setInvoiceSearch] = useState("");
+  const debouncedInvoiceSearch = useDebounce(invoiceSearch, 350);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalInvoices, setTotalInvoices] = useState(0);
   const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedInvoiceSearch, filters]);
 
   const fetchData = async () => {
     try {
@@ -85,14 +97,21 @@ const OutstandingInvoices = () => {
       setError(null);
       const config = {
         headers: { Authorization: `Bearer ${user.token}` },
-        params: {},
+        params: {
+          page,
+          limit: pageSize,
+        },
       };
+      if (debouncedInvoiceSearch) config.params.search = debouncedInvoiceSearch;
       if (filters.startDate) config.params.startDate = filters.startDate;
       if (filters.endDate) config.params.endDate = filters.endDate;
       if (filters.status) config.params.status = filters.status;
+      if (filters.customer) config.params.customer = filters.customer;
 
       const res = await axios.get(ENDPOINTS.REPORTS_OUTSTANDING, config);
       setData(res.data);
+      setTotalInvoices(res.data.total ?? res.data.totalInvoices ?? (res.data.invoices?.length || 0));
+      setTotalPages(res.data.pages ?? 1);
     } catch (err) {
       console.error("Error fetching outstanding invoices:", err);
       setError("Failed to load outstanding invoices.");
@@ -103,7 +122,7 @@ const OutstandingInvoices = () => {
 
   useEffect(() => {
     fetchData();
-  }, [filters]);
+  }, [filters, page, pageSize, debouncedInvoiceSearch]);
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
@@ -113,6 +132,7 @@ const OutstandingInvoices = () => {
   const clearFilters = () => {
     setFilters({ customer: "", startDate: "", endDate: "", status: "" });
     setCustomerSearch("");
+    setInvoiceSearch("");
   };
 
   const hasActiveFilters = () => {
@@ -163,10 +183,10 @@ const OutstandingInvoices = () => {
   // Local customer-search filter (client-side)
   const filteredCustomerSummary = customerSearch
     ? customerSummary.filter(
-        (c) =>
-          c.customerName.toLowerCase().includes(customerSearch.toLowerCase()) ||
-          c.email?.toLowerCase().includes(customerSearch.toLowerCase()),
-      )
+      (c) =>
+        c.customerName.toLowerCase().includes(customerSearch.toLowerCase()) ||
+        c.email?.toLowerCase().includes(customerSearch.toLowerCase()),
+    )
     : customerSummary;
 
   // Group invoices by customer ID for expanding
@@ -295,11 +315,10 @@ const OutstandingInvoices = () => {
         <button
           onClick={() => setViewMode("invoices")}
           id="outstanding-view-invoices-btn"
-          className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-            viewMode === "invoices"
+          className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === "invoices"
               ? "bg-blue-600 text-white"
               : "text-slate-400 hover:text-white"
-          }`}
+            }`}
         >
           <FileText size={15} />
           Invoice View
@@ -307,11 +326,10 @@ const OutstandingInvoices = () => {
         <button
           onClick={() => setViewMode("customers")}
           id="outstanding-view-customers-btn"
-          className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-            viewMode === "customers"
+          className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === "customers"
               ? "bg-blue-600 text-white"
               : "text-slate-400 hover:text-white"
-          }`}
+            }`}
         >
           <Users size={15} />
           Customer View
@@ -321,6 +339,21 @@ const OutstandingInvoices = () => {
       {/* ====== INVOICE VIEW ====== */}
       {viewMode === "invoices" && (
         <div className="bg-slate-900 shadow rounded-lg overflow-hidden border border-slate-800">
+          <div className="p-4 border-b border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-950">
+            <div className="flex-1 max-w-md">
+              <SearchBar
+                value={invoiceSearch}
+                onChange={setInvoiceSearch}
+                placeholder="Search by invoice #, tax #, customer..."
+              />
+            </div>
+            {totalInvoices > 0 && (
+              <span className="text-xs text-slate-400 bg-slate-900 px-2.5 py-1.5 rounded-md border border-slate-700 self-start sm:self-auto">
+                {totalInvoices} {totalInvoices === 1 ? "invoice" : "invoices"}
+              </span>
+            )}
+          </div>
+
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-800">
               <thead className="bg-slate-950">
@@ -363,8 +396,8 @@ const OutstandingInvoices = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-white">
                       {inv.customer
                         ? `${inv.customer.firstName || ""} ${inv.customer.lastName || ""}`.trim() ||
-                          inv.customerInfo?.company ||
-                          "Unknown"
+                        inv.customerInfo?.company ||
+                        "Unknown"
                         : inv.customerInfo?.firstName
                           ? `${inv.customerInfo.firstName} ${inv.customerInfo.lastName || ""}`.trim()
                           : "Unknown"}
@@ -405,7 +438,7 @@ const OutstandingInvoices = () => {
             <div className="p-6 text-center text-slate-500">
               {loading
                 ? "Loading outstanding invoices..."
-                : "No outstanding invoices found. All invoices are fully paid."}
+                : "No outstanding invoices found matching your criteria."}
             </div>
           )}
 
@@ -439,6 +472,18 @@ const OutstandingInvoices = () => {
               </div>
             </div>
           )}
+
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={totalInvoices}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(newSize) => {
+              setPageSize(newSize);
+              setPage(1);
+            }}
+          />
         </div>
       )}
 
@@ -468,9 +513,9 @@ const OutstandingInvoices = () => {
                 const isExpanded = expandedCustomers[cust.customerId];
                 const pct = summary.totalOutstanding
                   ? Math.min(
-                      (cust.totalOutstanding / summary.totalOutstanding) * 100,
-                      100,
-                    )
+                    (cust.totalOutstanding / summary.totalOutstanding) * 100,
+                    100,
+                  )
                   : 0;
 
                 return (

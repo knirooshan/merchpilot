@@ -89,14 +89,93 @@ const extractProductFields = (body) => {
   };
 };
 
-// @desc    Get all products
+// @desc    Get all products (with optional server-side search, filter, and pagination)
 // @route   GET /api/products
 // @access  Private
 const getProducts = async (req, res) => {
   try {
     const { Product } = getTenantModels(req.dbConnection);
-    const products = await Product.find({});
-    res.json(products);
+    const {
+      search,
+      status,
+      sortBy,
+      page,
+      limit,
+      pageNumber,
+      pageSize,
+      paginate,
+    } = req.query;
+
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined ||
+      paginate === "true";
+
+    const filter = {};
+
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: "i" };
+      filter.$or = [
+        { name: searchRegex },
+        { sku: searchRegex },
+        { description: searchRegex },
+        { handle: searchRegex },
+      ];
+    }
+
+    if (status && status !== "all") {
+      filter.status = status;
+    }
+
+    let sort = { createdAt: -1 };
+    if (sortBy) {
+      switch (sortBy) {
+        case "name_asc":
+          sort = { name: 1 };
+          break;
+        case "name_desc":
+          sort = { name: -1 };
+          break;
+        case "price_asc":
+          sort = { price: 1 };
+          break;
+        case "price_desc":
+          sort = { price: -1 };
+          break;
+        case "createdAt_asc":
+          sort = { createdAt: 1 };
+          break;
+        case "createdAt_desc":
+        default:
+          sort = { createdAt: -1 };
+          break;
+      }
+    }
+
+    if (!isPaginated) {
+      const products = await Product.find(filter).sort(sort);
+      return res.json(products);
+    }
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
+
+    const total = await Product.countDocuments(filter);
+    const products = await Product.find(filter)
+      .sort(sort)
+      .limit(perPage)
+      .skip((currentPage - 1) * perPage);
+
+    res.json({
+      products,
+      data: products,
+      total,
+      page: currentPage,
+      pages: Math.ceil(total / perPage),
+      limit: perPage,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -149,9 +228,9 @@ const syncProducts = async (req, res) => {
         images: v.image ? [v.image.src] : [],
         options: v.attributes
           ? v.attributes.reduce((acc, a) => {
-              acc[a.name] = a.option;
-              return acc;
-            }, {})
+            acc[a.name] = a.option;
+            return acc;
+          }, {})
           : {},
         manageInventory: v.manage_stock || false,
         allowBackorder: v.backorders_allowed || false,
@@ -222,11 +301,11 @@ const createProduct = async (req, res) => {
     const now = new Date();
     const wooId = parseInt(
       now.getFullYear().toString() +
-        (now.getMonth() + 1).toString().padStart(2, "0") +
-        now.getDate().toString().padStart(2, "0") +
-        now.getHours().toString().padStart(2, "0") +
-        now.getMinutes().toString().padStart(2, "0") +
-        now.getSeconds().toString().padStart(2, "0"),
+      (now.getMonth() + 1).toString().padStart(2, "0") +
+      now.getDate().toString().padStart(2, "0") +
+      now.getHours().toString().padStart(2, "0") +
+      now.getMinutes().toString().padStart(2, "0") +
+      now.getSeconds().toString().padStart(2, "0"),
     );
 
     const productData = { wooId, ...extractProductFields(req.body) };

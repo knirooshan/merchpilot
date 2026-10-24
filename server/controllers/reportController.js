@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const { getTenantModels } = require("../models/tenantModels");
 const {
   parseStartOfDay,
@@ -392,7 +393,17 @@ const getProfitLossReport = async (req, res) => {
 const getOutstandingSummary = async (req, res) => {
   try {
     const { Invoice } = getTenantModels(req.dbConnection);
-    const { startDate, endDate, customer, status } = req.query;
+    const {
+      startDate,
+      endDate,
+      customer,
+      status,
+      search,
+      page,
+      limit,
+      pageNumber,
+      pageSize,
+    } = req.query;
 
     const allowedStatuses = ["overdue", "partially_paid", "sent", "draft"];
     const filter = {
@@ -404,8 +415,11 @@ const getOutstandingSummary = async (req, res) => {
 
     // Filter by customer
     if (customer && customer !== "all") {
-      const mongoose = require("mongoose");
-      filter.customer = new mongoose.Types.ObjectId(customer);
+      if (mongoose.Types.ObjectId.isValid(customer)) {
+        filter.customer = new mongoose.Types.ObjectId(customer);
+      } else {
+        filter.customer = customer;
+      }
     }
 
     // Filter by invoice date range
@@ -454,8 +468,8 @@ const getOutstandingSummary = async (req, res) => {
       const custId = inv.customer?._id?.toString() || "unknown";
       const custName = inv.customer
         ? `${inv.customer.firstName || ""} ${inv.customer.lastName || ""}`.trim() ||
-          inv.customerInfo?.company ||
-          "Unknown"
+        inv.customerInfo?.company ||
+        "Unknown"
         : inv.customerInfo?.firstName
           ? `${inv.customerInfo.firstName} ${inv.customerInfo.lastName || ""}`.trim()
           : "Unknown";
@@ -478,7 +492,7 @@ const getOutstandingSummary = async (req, res) => {
       (a, b) => b.totalOutstanding - a.totalOutstanding,
     );
 
-    // Summary totals
+    // Summary totals (computed over the complete set)
     const totalOutstanding = enriched.reduce((s, i) => s + i.balanceDue, 0);
     const overdueCount = enriched.filter(
       (i) => i.status === "overdue" || i.daysOverdue > 0,
@@ -488,8 +502,61 @@ const getOutstandingSummary = async (req, res) => {
     ).length;
     const customersWithDebt = customerSummary.length;
 
+    // Filter displayed invoices by search query if provided
+    let filteredInvoices = enriched;
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      filteredInvoices = enriched.filter((inv) => {
+        const invNo = (inv.invoiceNumber || "").toLowerCase();
+        const taxInvNo = (inv.taxInvoiceNumber || "").toLowerCase();
+        const custName = (
+          inv.customer
+            ? `${inv.customer.firstName || ""} ${inv.customer.lastName || ""}`
+            : `${inv.customerInfo?.firstName || ""} ${inv.customerInfo?.lastName || ""}`
+        ).toLowerCase();
+        const custEmail = (
+          inv.customer?.email ||
+          inv.customerInfo?.email ||
+          ""
+        ).toLowerCase();
+        return (
+          invNo.includes(q) ||
+          taxInvNo.includes(q) ||
+          custName.includes(q) ||
+          custEmail.includes(q)
+        );
+      });
+    }
+
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined;
+
+    let pagedInvoices = filteredInvoices;
+    let currentPage = 1;
+    let perPage = filteredInvoices.length;
+    let totalPages = 1;
+
+    if (isPaginated) {
+      currentPage = Math.max(1, Number(page || pageNumber) || 1);
+      perPage = Math.max(1, Number(limit || pageSize) || 15);
+      totalPages = Math.ceil(filteredInvoices.length / perPage) || 1;
+      pagedInvoices = filteredInvoices.slice(
+        (currentPage - 1) * perPage,
+        currentPage * perPage,
+      );
+    }
+
     res.json({
-      invoices: enriched,
+      invoices: pagedInvoices,
+      allInvoices: enriched,
+      totalInvoices: filteredInvoices.length,
+      total: filteredInvoices.length,
+      page: currentPage,
+      pages: totalPages,
+      limit: perPage,
       customerSummary,
       summary: {
         totalOutstanding,

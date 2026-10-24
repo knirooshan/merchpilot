@@ -5,6 +5,9 @@ import { useSelector } from "react-redux";
 import { ArrowLeft, RefreshCw, Eye } from "lucide-react";
 import { Link } from "react-router-dom";
 import ActivityLogModal from "../components/ActivityLogModal";
+import SearchBar from "../components/SearchBar";
+import Pagination from "../components/Pagination";
+import { useDebounce } from "../utils/useDebounce";
 import { formatDate, formatTime } from "../utils/date";
 
 const ActivityLog = () => {
@@ -12,26 +15,35 @@ const ActivityLog = () => {
   const { data: settings } = useSelector((state) => state.settings);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [pages, setPages] = useState(1);
+  const [totalLogs, setTotalLogs] = useState(0);
   const [selectedLog, setSelectedLog] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  useEffect(() => {
-    fetchLogs(page);
-  }, [page, user.token]);
-
-  const fetchLogs = async (pageNumber) => {
+  const fetchLogs = async () => {
     try {
       setLoading(true);
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize),
+      });
+      if (debouncedSearch && debouncedSearch.trim()) {
+        params.append("search", debouncedSearch.trim());
+      }
+
       const { data } = await axios.get(
-        ENDPOINTS.ACTIVITY_LOGS + `?pageNumber=${pageNumber}`,
-        config
+        `${ENDPOINTS.ACTIVITY_LOGS}?${params.toString()}`,
+        config,
       );
-      setLogs(data.logs);
-      setPages(data.pages);
+      setLogs(data.logs || data.data || []);
+      setTotalLogs(data.total || (data.logs ? data.logs.length : 0));
+      setPages(data.pages || 1);
       setLoading(false);
     } catch (error) {
       console.error("Error fetching logs:", error);
@@ -39,9 +51,17 @@ const ActivityLog = () => {
     }
   };
 
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [page, pageSize, debouncedSearch, user.token]);
+
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+    <div className="max-w-6xl mx-auto space-y-6">
+      <div className="flex justify-between items-center">
         <div className="flex items-center gap-4">
           <Link
             to="/settings"
@@ -52,12 +72,18 @@ const ActivityLog = () => {
           <h1 className="text-2xl font-bold text-white">Activity Log</h1>
         </div>
         <button
-          onClick={() => fetchLogs(page)}
+          onClick={fetchLogs}
           className="flex items-center px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700 transition-colors"
         >
           <RefreshCw className="mr-2 h-4 w-4" /> Refresh
         </button>
       </div>
+
+      <SearchBar
+        value={search}
+        onChange={setSearch}
+        placeholder="Search activity logs by action, collection, or user..."
+      />
 
       <div className="bg-slate-900 shadow rounded-lg overflow-hidden border border-slate-800">
         <div className="overflow-x-auto">
@@ -108,15 +134,14 @@ const ActivityLog = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <span
-                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          log.action === "create"
-                            ? "bg-green-100 text-green-800"
-                            : log.action === "update"
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${log.action === "create"
+                          ? "bg-green-100 text-green-800"
+                          : log.action === "update"
                             ? "bg-blue-100 text-blue-800"
                             : log.action === "delete"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-slate-100 text-slate-800"
-                        }`}
+                              ? "bg-red-100 text-red-800"
+                              : "bg-slate-100 text-slate-800"
+                          }`}
                       >
                         {log.action} {log.collectionName}
                       </span>
@@ -140,56 +165,18 @@ const ActivityLog = () => {
           </table>
         </div>
 
-        {/* Pagination */}
-        {pages > 1 && (
-          <div className="bg-slate-950 px-4 py-3 flex items-center justify-between border-t border-slate-800 sm:px-6">
-            <div className="flex-1 flex justify-between sm:hidden">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="relative inline-flex items-center px-4 py-2 border border-slate-700 text-sm font-medium rounded-md text-slate-300 bg-slate-900 hover:bg-slate-800 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                disabled={page === pages}
-                className="ml-3 relative inline-flex items-center px-4 py-2 border border-slate-700 text-sm font-medium rounded-md text-slate-300 bg-slate-900 hover:bg-slate-800 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm text-slate-400">
-                  Page <span className="font-medium">{page}</span> of{" "}
-                  <span className="font-medium">{pages}</span>
-                </p>
-              </div>
-              <div>
-                <nav
-                  className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                  aria-label="Pagination"
-                >
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-slate-700 bg-slate-900 text-sm font-medium text-slate-400 hover:bg-slate-800 disabled:opacity-50"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={() => setPage((p) => Math.min(pages, p + 1))}
-                    disabled={page === pages}
-                    className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-slate-700 bg-slate-900 text-sm font-medium text-slate-400 hover:bg-slate-800 disabled:opacity-50"
-                  >
-                    Next
-                  </button>
-                </nav>
-              </div>
-            </div>
-          </div>
-        )}
+        <Pagination
+          currentPage={page}
+          totalPages={pages}
+          totalItems={totalLogs}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          }}
+          itemName="activity logs"
+        />
       </div>
 
       <ActivityLogModal

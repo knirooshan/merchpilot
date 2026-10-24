@@ -9,7 +9,7 @@ const MediaLibraryModal = ({ isOpen, onClose, onSelect }) => {
 
   if (!isOpen) return null;
 
-  const handleUploadComplete = (newMedia) => {
+  const handleUploadComplete = () => {
     setRefreshTrigger((prev) => prev + 1);
     setActiveTab("library");
   };
@@ -34,21 +34,19 @@ const MediaLibraryModal = ({ isOpen, onClose, onSelect }) => {
 
         <div className="flex border-b border-slate-800">
           <button
-            className={`px-6 py-3 text-sm font-medium transition-colors ${
-              activeTab === "library"
+            className={`px-6 py-3 text-sm font-medium transition-colors ${activeTab === "library"
                 ? "text-blue-500 border-b-2 border-blue-500"
                 : "text-slate-400 hover:text-white"
-            }`}
+              }`}
             onClick={() => setActiveTab("library")}
           >
             Media Library
           </button>
           <button
-            className={`px-6 py-3 text-sm font-medium transition-colors ${
-              activeTab === "upload"
+            className={`px-6 py-3 text-sm font-medium transition-colors ${activeTab === "upload"
                 ? "text-blue-500 border-b-2 border-blue-500"
                 : "text-slate-400 hover:text-white"
-            }`}
+              }`}
             onClick={() => setActiveTab("upload")}
           >
             Upload Files

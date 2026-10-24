@@ -1,13 +1,64 @@
 const { getTenantModels } = require("../models/tenantModels");
 
-// @desc    Get all users
+// @desc    Get all users (with optional server-side search, role filter, and pagination)
 // @route   GET /api/users
 // @access  Private (Admin only)
 const getUsers = async (req, res) => {
   try {
     const { User } = getTenantModels(req.dbConnection);
-    const users = await User.find().select("-password");
-    res.json(users);
+    const {
+      search,
+      role,
+      page,
+      limit,
+      pageNumber,
+      pageSize,
+      paginate,
+    } = req.query;
+
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined ||
+      paginate === "true";
+
+    const filter = {};
+
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: "i" };
+      filter.$or = [{ name: searchRegex }, { email: searchRegex }];
+    }
+
+    if (role && role !== "all") {
+      filter.role = role;
+    }
+
+    if (!isPaginated) {
+      const users = await User.find(filter)
+        .select("-password")
+        .sort({ createdAt: -1 });
+      return res.json(users);
+    }
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
+
+    const total = await User.countDocuments(filter);
+    const users = await User.find(filter)
+      .select("-password")
+      .sort({ createdAt: -1 })
+      .limit(perPage)
+      .skip((currentPage - 1) * perPage);
+
+    res.json({
+      users,
+      data: users,
+      total,
+      page: currentPage,
+      pages: Math.ceil(total / perPage),
+      limit: perPage,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

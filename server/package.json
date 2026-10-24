@@ -7,6 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "lint": "node --check index.js",
     "env:generate": "compose-env generate --output .env.example",
     "env:validate": "compose-env validate"
   },

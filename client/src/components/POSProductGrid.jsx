@@ -1,6 +1,6 @@
 import { Search, Package } from "lucide-react";
 import { formatCurrency } from "../utils/currency";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useSelector } from "react-redux";
 
 const POSProductGrid = ({ products, onAddToCart }) => {
