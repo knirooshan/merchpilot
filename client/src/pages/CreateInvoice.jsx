@@ -4,7 +4,11 @@ import { ENDPOINTS } from "../config/api";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Plus, Trash, Save, Edit2 } from "lucide-react";
 import { useSelector } from "react-redux";
-import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
+import {
+  formatCurrency,
+  getDocumentCurrencySettings,
+  isForeignCurrency,
+} from "../utils/currency";
 import { calculateTotals as calcTotals } from "../utils/taxCalculations";
 import CustomerForm from "../components/CustomerForm";
 import CurrencySelector from "../components/CurrencySelector";
@@ -129,10 +133,21 @@ const CreateInvoice = () => {
             deliveryCharge: deliveryCharge || 0,
           }));
 
-          // Carry over currency from quotation
-          if (quotationCurrency?.code) {
+          // Carry over currency from quotation (only if foreign)
+          if (
+            isForeignCurrency(
+              {
+                currency: quotationCurrency,
+                exchangeRate: quotationExchangeRate,
+              },
+              settings,
+            )
+          ) {
             setCurrency(quotationCurrency);
             setExchangeRate(quotationExchangeRate || null);
+          } else {
+            setCurrency(null);
+            setExchangeRate(null);
           }
         }
 
@@ -182,6 +197,7 @@ const CreateInvoice = () => {
     e.preventDefault();
     const totals = calculateTotals();
 
+    const isForeign = isForeignCurrency({ currency, exchangeRate }, settings);
     try {
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
@@ -194,8 +210,8 @@ const CreateInvoice = () => {
           tax: totals.tax,
           taxRate: formData.taxRate,
           total: totals.total,
-          currency: currency || undefined,
-          exchangeRate: exchangeRate || undefined,
+          currency: isForeign ? currency : undefined,
+          exchangeRate: isForeign ? exchangeRate : undefined,
         },
         config,
       );

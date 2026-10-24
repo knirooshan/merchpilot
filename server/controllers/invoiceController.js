@@ -281,8 +281,9 @@ const createInvoice = async (req, res) => {
       reference,
       taxInvoiceNumber,
       placeOfSupply: resolvedPlaceOfSupply,
-      currency,
-      exchangeRate,
+      currency: currency?.code ? currency : undefined,
+      exchangeRate:
+        currency?.code && exchangeRate?.rate ? exchangeRate : undefined,
       invoiceType: invoiceType || "tax",
     });
 
@@ -389,6 +390,11 @@ const updateInvoice = async (req, res) => {
       Object.keys(updateData).forEach((key) => {
         invoice[key] = updateData[key];
       });
+
+      if (!invoice.currency?.code) {
+        invoice.currency = undefined;
+        invoice.exchangeRate = undefined;
+      }
 
       const updatedInvoice = await invoice.save();
       res.json(updatedInvoice);

@@ -160,8 +160,9 @@ const createQuotation = async (req, res) => {
       terms,
       quotationDate,
       validUntil,
-      currency,
-      exchangeRate,
+      currency: currency?.code ? currency : undefined,
+      exchangeRate:
+        currency?.code && exchangeRate?.rate ? exchangeRate : undefined,
     });
 
     const createdQuotation = await quotation.save();
@@ -207,6 +208,11 @@ const updateQuotation = async (req, res) => {
       Object.keys(updateData).forEach((key) => {
         quotation[key] = updateData[key];
       });
+
+      if (!quotation.currency?.code) {
+        quotation.currency = undefined;
+        quotation.exchangeRate = undefined;
+      }
 
       const updatedQuotation = await quotation.save();
       res.json(updatedQuotation);

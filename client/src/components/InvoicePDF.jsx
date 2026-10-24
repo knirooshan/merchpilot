@@ -7,7 +7,11 @@ import {
   StyleSheet,
   Image,
 } from "@react-pdf/renderer";
-import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
+import {
+  formatCurrency,
+  getDocumentCurrencySettings,
+  isForeignCurrency,
+} from "../utils/currency";
 import { formatDate } from "../utils/date";
 import { getTaxDisplay } from "../utils/taxDisplay";
 import { renderHtmlToPdf } from "../utils/pdfUtils.jsx";
@@ -596,18 +600,20 @@ const InvoicePDF = ({ invoice, settings }) => {
               <Text style={styles.detailValue}>{invoice.reference}</Text>
             </View>
           )}
-          {invoice.currency?.code &&
-            invoice.currency.code !== settings?.currency?.code && (
-              <View style={styles.detailCell}>
-                <Text style={styles.detailLabel}>Currency</Text>
-                <Text style={[styles.detailValue, { color: "#d97706" }]}>
-                  {invoice.currency.code}
-                  {invoice.exchangeRate?.rate > 0
-                    ? `  (1 ${invoice.currency.code} = ${invoice.exchangeRate.rate} ${invoice.exchangeRate.baseCurrency})`
-                    : ""}
-                </Text>
-              </View>
-            )}
+          {isForeignCurrency(invoice, settings) && (
+            <View style={styles.detailCell}>
+              <Text style={styles.detailLabel}>Currency</Text>
+              <Text style={[styles.detailValue, { color: "#d97706" }]}>
+                {invoice.currency.code}
+                {invoice.exchangeRate?.rate > 0
+                  ? `  (1 ${invoice.currency.code} = ${invoice.exchangeRate.rate} ${invoice.exchangeRate.baseCurrency ||
+                  settings?.currency?.code ||
+                  "LKR"
+                  })`
+                  : ""}
+              </Text>
+            </View>
+          )}
           {invoice.dueDate === undefined || !invoice.placeOfSupply ? (
             /* Fill empty cell to keep alignment tidy */
             <View style={styles.detailCell} />

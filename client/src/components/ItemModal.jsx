@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { X, Search, Package, PlusCircle } from "lucide-react";
-import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
+import {
+  formatCurrency,
+  getDocumentCurrencySettings,
+  isForeignCurrency,
+} from "../utils/currency";
 import { calculateItemTax } from "../utils/taxCalculations";
 import RichTextEditor from "./RichTextEditor";
 
@@ -21,10 +25,8 @@ const ItemModal = ({
   const defaultTaxMethod = settings?.tax?.defaultMethod || "exclusive";
 
   // Determine if we're working in a foreign currency with a valid exchange rate
-  const baseCurrencyCode = settings?.currency?.code || "LKR";
   const isForeign =
-    currency?.code &&
-    currency.code !== baseCurrencyCode &&
+    isForeignCurrency({ currency, exchangeRate }, settings) &&
     exchangeRate?.rate > 0;
   const effectiveSettings = getDocumentCurrencySettings({ currency }, settings);
 
@@ -158,8 +160,8 @@ const ItemModal = ({
         <div className="flex border-b border-slate-800">
           <button
             className={`flex-1 py-3 text-sm font-medium ${activeTab === "existing"
-                ? "text-blue-400 border-b-2 border-blue-400"
-                : "text-slate-400 hover:text-slate-200"
+              ? "text-blue-400 border-b-2 border-blue-400"
+              : "text-slate-400 hover:text-slate-200"
               }`}
             onClick={() => setActiveTab("existing")}
           >
@@ -167,8 +169,8 @@ const ItemModal = ({
           </button>
           <button
             className={`flex-1 py-3 text-sm font-medium ${activeTab === "custom"
-                ? "text-blue-400 border-b-2 border-blue-400"
-                : "text-slate-400 hover:text-slate-200"
+              ? "text-blue-400 border-b-2 border-blue-400"
+              : "text-slate-400 hover:text-slate-200"
               }`}
             onClick={() => setActiveTab("custom")}
           >
@@ -331,8 +333,7 @@ const ItemModal = ({
                       base
                     </div>
                   )}
-                  {currency?.code &&
-                    currency.code !== baseCurrencyCode &&
+                  {isForeignCurrency({ currency, exchangeRate }, settings) &&
                     !exchangeRate?.rate && (
                       <div className="text-xs text-amber-600 mt-1">
                         Enter exchange rate above to auto-convert prices

@@ -7,7 +7,11 @@ import {
   StyleSheet,
   Image,
 } from "@react-pdf/renderer";
-import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
+import {
+  formatCurrency,
+  getDocumentCurrencySettings,
+  isForeignCurrency,
+} from "../utils/currency";
 import { formatDate } from "../utils/date";
 import { getTaxDisplay } from "../utils/taxDisplay";
 import { renderHtmlToPdf } from "../utils/pdfUtils.jsx";
@@ -280,16 +284,16 @@ const QuotationPDF = ({ quotation, settings }) => {
             {(quotation.customer?.billing?.city ||
               quotation.customer?.billing?.state ||
               quotation.customer?.billing?.postcode) && (
-              <Text style={styles.text}>
-                {[
-                  quotation.customer?.billing?.city,
-                  quotation.customer?.billing?.state,
-                  quotation.customer?.billing?.postcode,
-                ]
-                  .filter(Boolean)
-                  .join(", ")}
-              </Text>
-            )}
+                <Text style={styles.text}>
+                  {[
+                    quotation.customer?.billing?.city,
+                    quotation.customer?.billing?.state,
+                    quotation.customer?.billing?.postcode,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
+                </Text>
+              )}
             {quotation.customer?.billing?.country && (
               <Text style={styles.text}>
                 {quotation.customer.billing.country}
@@ -342,28 +346,27 @@ const QuotationPDF = ({ quotation, settings }) => {
                 </Text>
               </View>
             )}
-            {quotation.currency?.code &&
-              quotation.currency.code !== settings?.currency?.code && (
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    marginTop: 4,
-                  }}
+            {isForeignCurrency(quotation, settings) && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  marginTop: 4,
+                }}
+              >
+                <Text style={styles.text}>Currency:</Text>
+                <Text
+                  style={[
+                    styles.text,
+                    { fontWeight: "bold", color: "#d97706" },
+                  ]}
                 >
-                  <Text style={styles.text}>Currency:</Text>
-                  <Text
-                    style={[
-                      styles.text,
-                      { fontWeight: "bold", color: "#d97706" },
-                    ]}
-                  >
-                    {quotation.currency.code}
-                  </Text>
-                </View>
-              )}
-            {quotation.exchangeRate?.rate > 0 &&
-              quotation.currency?.code !== settings?.currency?.code && (
+                  {quotation.currency.code}
+                </Text>
+              </View>
+            )}
+            {isForeignCurrency(quotation, settings) &&
+              quotation.exchangeRate?.rate > 0 && (
                 <View
                   style={{
                     flexDirection: "row",
@@ -373,7 +376,9 @@ const QuotationPDF = ({ quotation, settings }) => {
                   <Text style={styles.text}>Exchange Rate:</Text>
                   <Text style={styles.text}>
                     1 {quotation.currency.code} = {quotation.exchangeRate.rate}{" "}
-                    {quotation.exchangeRate.baseCurrency}
+                    {quotation.exchangeRate.baseCurrency ||
+                      settings?.currency?.code ||
+                      "LKR"}
                   </Text>
                 </View>
               )}

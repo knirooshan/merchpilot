@@ -13,7 +13,11 @@ import {
 } from "lucide-react";
 import { useSelector } from "react-redux";
 import QuotationPDF from "../components/QuotationPDF";
-import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
+import {
+  formatCurrency,
+  getDocumentCurrencySettings,
+  isForeignCurrency,
+} from "../utils/currency";
 import { formatDate } from "../utils/date";
 import { getTaxDisplay } from "../utils/taxDisplay";
 import { urlToBase64 } from "../utils/imageUtils";
@@ -221,22 +225,22 @@ const QuotationView = () => {
                 {quotation.status}
               </span>
             </p>
-            {quotation.currency?.code &&
-              quotation.currency.code !== settings?.currency?.code && (
-                <p className="text-slate-600 mt-1">
-                  Currency:{" "}
-                  <span className="font-semibold text-amber-600">
-                    {quotation.currency.code}
+            {isForeignCurrency(quotation, settings) && (
+              <p className="text-slate-600 mt-1">
+                Currency:{" "}
+                <span className="font-semibold text-amber-600">
+                  {quotation.currency.code}
+                </span>
+                {quotation.exchangeRate?.rate > 0 && (
+                  <span className="text-slate-500 text-sm ml-1">
+                    (1 {quotation.currency.code} = {quotation.exchangeRate.rate}{" "}
+                    {quotation.exchangeRate.baseCurrency ||
+                      settings?.currency?.code ||
+                      "LKR"})
                   </span>
-                  {quotation.exchangeRate?.rate > 0 && (
-                    <span className="text-slate-500 text-sm ml-1">
-                      (1 {quotation.currency.code} ={" "}
-                      {quotation.exchangeRate.rate}{" "}
-                      {quotation.exchangeRate.baseCurrency})
-                    </span>
-                  )}
-                </p>
-              )}
+                )}
+              </p>
+            )}
           </div>
           <div className="text-right">
             {settings?.logo && (
@@ -272,8 +276,7 @@ const QuotationView = () => {
               ? `${quotation.customer.salutation} `
               : ""}
             {quotation.customer?.firstName || quotation.customer?.lastName
-              ? `${quotation.customer.firstName || ""} ${
-                  quotation.customer.lastName || ""
+              ? `${quotation.customer.firstName || ""} ${quotation.customer.lastName || ""
                 }`.trim()
               : quotation.customer?.billing?.company || "Unnamed Customer"}
           </p>
@@ -296,16 +299,16 @@ const QuotationView = () => {
           {(quotation.customer?.billing?.city ||
             quotation.customer?.billing?.state ||
             quotation.customer?.billing?.postcode) && (
-            <p className="text-slate-600">
-              {[
-                quotation.customer?.billing?.city,
-                quotation.customer?.billing?.state,
-                quotation.customer?.billing?.postcode,
-              ]
-                .filter(Boolean)
-                .join(", ")}
-            </p>
-          )}
+              <p className="text-slate-600">
+                {[
+                  quotation.customer?.billing?.city,
+                  quotation.customer?.billing?.state,
+                  quotation.customer?.billing?.postcode,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
+              </p>
+            )}
           {quotation.customer?.billing?.country && (
             <p className="text-slate-600">
               {quotation.customer.billing.country}

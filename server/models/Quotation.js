@@ -57,7 +57,7 @@ const quotationSchema = new mongoose.Schema(
       position: { type: String, default: "before", enum: ["before", "after"] },
     },
     exchangeRate: {
-      rate: { type: Number, default: 1 },
+      rate: { type: Number },
       baseCurrency: { type: String },
     },
   },

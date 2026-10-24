@@ -4,7 +4,11 @@ import { ENDPOINTS } from "../config/api";
 import { useNavigate, useParams } from "react-router-dom";
 import { Plus, Trash, Save, Edit2 } from "lucide-react";
 import { useSelector } from "react-redux";
-import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
+import {
+  formatCurrency,
+  getDocumentCurrencySettings,
+  isForeignCurrency,
+} from "../utils/currency";
 import { calculateTotals as calcTotals } from "../utils/taxCalculations";
 import CustomerForm from "../components/CustomerForm";
 import CurrencySelector from "../components/CurrencySelector";
@@ -87,10 +91,13 @@ const EditQuotation = () => {
           terms: quotation.terms || "",
         });
 
-        // Restore saved currency
-        if (quotation.currency?.code) {
+        // Restore saved currency (only if foreign)
+        if (isForeignCurrency(quotation, settings)) {
           setCurrency(quotation.currency);
           setExchangeRate(quotation.exchangeRate || null);
+        } else {
+          setCurrency(null);
+          setExchangeRate(null);
         }
 
         setLoading(false);
@@ -142,6 +149,7 @@ const EditQuotation = () => {
     try {
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
+      const isForeign = isForeignCurrency({ currency, exchangeRate }, settings);
       await axios.put(
         ENDPOINTS.QUOTATION_BY_ID(id),
         {
@@ -151,8 +159,8 @@ const EditQuotation = () => {
           tax: totals.tax,
           taxRate: formData.taxRate,
           total: totals.total,
-          currency: currency || null,
-          exchangeRate: exchangeRate || null,
+          currency: isForeign ? currency : null,
+          exchangeRate: isForeign ? exchangeRate : null,
         },
         config,
       );

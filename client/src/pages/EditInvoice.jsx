@@ -4,7 +4,11 @@ import { ENDPOINTS } from "../config/api";
 import { useNavigate, useParams } from "react-router-dom";
 import { Plus, Trash, Save, Edit2 } from "lucide-react";
 import { useSelector } from "react-redux";
-import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
+import {
+  formatCurrency,
+  getDocumentCurrencySettings,
+  isForeignCurrency,
+} from "../utils/currency";
 import { calculateTotals as calcTotals } from "../utils/taxCalculations";
 import ReasonModal from "../components/ReasonModal";
 import CustomerForm from "../components/CustomerForm";
@@ -104,10 +108,13 @@ const EditInvoice = () => {
           invoiceType: invoice.invoiceType || "tax",
         });
 
-        // Restore saved currency
-        if (invoice.currency?.code) {
+        // Restore saved currency (only if foreign)
+        if (isForeignCurrency(invoice, settings)) {
           setCurrency(invoice.currency);
           setExchangeRate(invoice.exchangeRate || null);
+        } else {
+          setCurrency(null);
+          setExchangeRate(null);
         }
 
         setLoading(false);
@@ -163,6 +170,7 @@ const EditInvoice = () => {
     try {
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
+      const isForeign = isForeignCurrency({ currency, exchangeRate }, settings);
       await axios.put(
         ENDPOINTS.INVOICE_BY_ID(id),
         {
@@ -174,8 +182,8 @@ const EditInvoice = () => {
           total: totals.total,
           editReason: reason,
           editedBy: user.name,
-          currency: currency || null,
-          exchangeRate: exchangeRate || null,
+          currency: isForeign ? currency : null,
+          exchangeRate: isForeign ? exchangeRate : null,
         },
         config,
       );
