@@ -118,6 +118,49 @@ const Expenses = () => {
     );
   };
 
+  const resetForm = () => {
+    setFormData({
+      description: "",
+      amount: "",
+      category: "General",
+      date: new Date().toISOString().split("T")[0],
+      vendor: "",
+      paymentMethod: "Cash",
+      reference: "",
+      notes: "",
+      attachmentUrl: "",
+    });
+    setSelectedVendorOpt(null);
+    setUploadFile(null);
+  };
+
+  const handleEdit = (expense) => {
+    setEditingExpense(expense);
+    setSelectedVendorOpt(
+      expense.vendor ? formatVendorOption(expense.vendor) : null
+    );
+    setFormData({
+      description: expense.description,
+      amount: expense.amount,
+      category: expense.category,
+      date: expense.date.split("T")[0],
+      vendor: expense.vendor?._id || "",
+      paymentMethod: expense.paymentMethod || "Cash",
+      reference: expense.reference || "",
+      notes: expense.notes || "",
+      attachmentUrl: expense.attachmentUrl || "",
+    });
+    setUploadFile(null);
+    setShowForm(true);
+  };
+
+  const handleCancelEdit = () => {
+    setShowForm(false);
+    setEditingExpense(null);
+    setSelectedVendorOpt(null);
+    resetForm();
+  };
+
   const createExpenseMutation = useMutation({
     mutationFn: async (data) => {
       const res = await apiClient.post(ENDPOINTS.EXPENSES, data);
