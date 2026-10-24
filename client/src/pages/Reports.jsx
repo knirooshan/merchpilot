@@ -19,6 +19,59 @@ import { formatDate } from "../utils/date";
 import { Calendar, Download, Filter, FileText } from "lucide-react";
 import DateInput from "../components/DateInput";
 
+const CustomLegend = ({ payload }) => {
+  if (!payload) return null;
+  return (
+    <div className="flex justify-center gap-6 mt-4">
+      {payload.map((entry, index) => (
+        <div key={`item-${index}`} className="flex items-center gap-2">
+          <div
+            className="w-3 h-3 rounded-sm"
+            style={{ backgroundColor: entry.color }}
+          ></div>
+          <span className="text-slate-400 text-sm">{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const CustomTooltip = ({ active, payload, label, settings }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg shadow-xl">
+        <p className="text-slate-400 text-xs mb-2 font-medium uppercase tracking-wider">
+          {label}
+        </p>
+        <div className="space-y-1">
+          {payload.map((entry, index) => {
+            const isProfit = entry.dataKey === "profit";
+            const value = entry.value;
+            const color = isProfit
+              ? value >= 0
+                ? "#10B981"
+                : "#EF4444"
+              : entry.color;
+
+            return (
+              <div
+                key={index}
+                className="flex items-center justify-between gap-8"
+              >
+                <span className="text-slate-400 text-sm">{entry.name}:</span>
+                <span className="font-bold text-sm" style={{ color }}>
+                  {formatCurrency(value, settings)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
 const Reports = () => {
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
@@ -93,8 +146,7 @@ const Reports = () => {
       link.href = url;
       link.setAttribute(
         "download",
-        `${
-          activeTab === "sales" ? "Sales" : "Profit_Loss"
+        `${activeTab === "sales" ? "Sales" : "Profit_Loss"
         }_Report_${timeframe}.pdf`,
       );
       document.body.appendChild(link);
@@ -108,59 +160,6 @@ const Reports = () => {
 
   if (loading && !stats)
     return <div className="text-white p-6">Loading reports...</div>;
-
-  const CustomLegend = ({ payload }) => {
-    if (!payload) return null;
-    return (
-      <div className="flex justify-center gap-6 mt-4">
-        {payload.map((entry, index) => (
-          <div key={`item-${index}`} className="flex items-center gap-2">
-            <div
-              className="w-3 h-3 rounded-sm"
-              style={{ backgroundColor: entry.color }}
-            ></div>
-            <span className="text-slate-400 text-sm">{entry.value}</span>
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-slate-900 border border-slate-800 p-3 rounded-lg shadow-xl">
-          <p className="text-slate-400 text-xs mb-2 font-medium uppercase tracking-wider">
-            {label}
-          </p>
-          <div className="space-y-1">
-            {payload.map((entry, index) => {
-              const isProfit = entry.dataKey === "profit";
-              const value = entry.value;
-              const color = isProfit
-                ? value >= 0
-                  ? "#10B981"
-                  : "#EF4444"
-                : entry.color;
-
-              return (
-                <div
-                  key={index}
-                  className="flex items-center justify-between gap-8"
-                >
-                  <span className="text-slate-400 text-sm">{entry.name}:</span>
-                  <span className="font-bold text-sm" style={{ color }}>
-                    {formatCurrency(value, settings)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
 
   return (
     <div className="space-y-6">
@@ -179,11 +178,10 @@ const Reports = () => {
       <div className="flex border-b border-slate-800">
         <button
           onClick={() => setActiveTab("sales")}
-          className={`px-6 py-3 text-sm font-medium transition-colors relative ${
-            activeTab === "sales"
+          className={`px-6 py-3 text-sm font-medium transition-colors relative ${activeTab === "sales"
               ? "text-blue-500"
               : "text-slate-400 hover:text-slate-200"
-          }`}
+            }`}
         >
           Sales Report
           {activeTab === "sales" && (
@@ -192,11 +190,10 @@ const Reports = () => {
         </button>
         <button
           onClick={() => setActiveTab("profit-loss")}
-          className={`px-6 py-3 text-sm font-medium transition-colors relative ${
-            activeTab === "profit-loss"
+          className={`px-6 py-3 text-sm font-medium transition-colors relative ${activeTab === "profit-loss"
               ? "text-blue-500"
               : "text-slate-400 hover:text-slate-200"
-          }`}
+            }`}
         >
           Profit & Loss
           {activeTab === "profit-loss" && (
@@ -303,7 +300,7 @@ const Reports = () => {
                     <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
                     <XAxis dataKey="name" stroke="#94a3b8" />
                     <YAxis stroke="#94a3b8" />
-                    <Tooltip content={<CustomTooltip />} />
+                    <Tooltip content={<CustomTooltip settings={settings} />} />
                     <Legend content={<CustomLegend />} />
                     <Bar dataKey="sales" fill="#4F46E5" name="Sales" />
                   </BarChart>
@@ -355,15 +352,15 @@ const Reports = () => {
                     ))}
                     {(!salesData?.productBreakdown ||
                       salesData.productBreakdown.length === 0) && (
-                      <tr>
-                        <td
-                          colSpan="3"
-                          className="px-4 py-8 text-center text-slate-500 italic"
-                        >
-                          No product data found
-                        </td>
-                      </tr>
-                    )}
+                        <tr>
+                          <td
+                            colSpan="3"
+                            className="px-4 py-8 text-center text-slate-500 italic"
+                          >
+                            No product data found
+                          </td>
+                        </tr>
+                      )}
                   </tbody>
                 </table>
               </div>
@@ -398,8 +395,7 @@ const Reports = () => {
                       <td className="px-4 py-3 text-white">
                         {s.customer
                           ? s.customer.firstName || s.customer.lastName
-                            ? `${s.customer.firstName || ""} ${
-                                s.customer.lastName || ""
+                            ? `${s.customer.firstName || ""} ${s.customer.lastName || ""
                               }`.trim()
                             : s.customer.billing?.company || "N/A"
                           : "N/A"}
@@ -448,9 +444,8 @@ const Reports = () => {
             <div className="bg-slate-900 p-6 rounded-lg shadow border border-slate-800">
               <h3 className="text-slate-400 text-sm font-medium">Net Profit</h3>
               <p
-                className={`text-3xl font-bold ${
-                  stats.netProfit >= 0 ? "text-green-400" : "text-red-400"
-                }`}
+                className={`text-3xl font-bold ${stats.netProfit >= 0 ? "text-green-400" : "text-red-400"
+                  }`}
               >
                 {formatCurrency(stats.netProfit, settings)}
               </p>
@@ -468,7 +463,7 @@ const Reports = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
                   <XAxis dataKey="name" stroke="#94a3b8" />
                   <YAxis stroke="#94a3b8" />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip content={<CustomTooltip settings={settings} />} />
                   <Legend
                     content={() => (
                       <CustomLegend
@@ -521,8 +516,7 @@ const Reports = () => {
                         <td className="px-4 py-3 text-white">
                           {p.customer
                             ? p.customer.firstName || p.customer.lastName
-                              ? `${p.customer.firstName || ""} ${
-                                  p.customer.lastName || ""
+                              ? `${p.customer.firstName || ""} ${p.customer.lastName || ""
                                 }`.trim()
                               : p.customer.billing?.company || "N/A"
                             : "N/A"}

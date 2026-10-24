@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { logout } from "../store/slices/authSlice";
 import { fetchSettings } from "../store/slices/settingsSlice";
+import { ENDPOINTS } from "../config/api";
 import {
   LayoutDashboard,
   Settings,
@@ -63,15 +64,15 @@ const Layout = () => {
     },
     ...(user?.role === "admin"
       ? [
-          { name: "Users", href: "/users", icon: Users },
-          { name: "Settings", href: "/settings", icon: Settings },
-        ]
+        { name: "Users", href: "/users", icon: Users },
+        { name: "Settings", href: "/settings", icon: Settings },
+      ]
       : []),
     ...(user?.isSuperAdmin
       ? [
-          { name: "Tenants", href: "/tenants", icon: Users },
-          { name: "System Settings", href: "/admin/settings", icon: Settings },
-        ]
+        { name: "Tenants", href: "/tenants", icon: Users },
+        { name: "System Settings", href: "/admin/settings", icon: Settings },
+      ]
       : []),
   ];
 
@@ -158,11 +159,10 @@ const Layout = () => {
                 to={item.href}
                 className={`
                                     flex items-center px-4 py-3 text-sm font-medium rounded-md transition-colors
-                                    ${
-                                      isActive
-                                        ? "bg-blue-600 text-white"
-                                        : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                                    }
+                                    ${isActive
+                    ? "bg-blue-600 text-white"
+                    : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                  }
                                 `}
               >
                 <item.icon className="mr-3 h-5 w-5" />

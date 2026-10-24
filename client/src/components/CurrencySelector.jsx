@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Globe } from "lucide-react";
 
 // Common international currencies
@@ -35,15 +34,24 @@ const CURRENCIES = [
  *   onChange         - ({ currency, exchangeRate }) => void
  */
 const CurrencySelector = ({ settings, currency, exchangeRate, onChange }) => {
-  const baseCurrencyCode = settings?.currency?.code || "LKR";
-  const [open, setOpen] = useState(false);
+  const baseCurrencyCode =
+    settings?.currency?.code || exchangeRate?.baseCurrency || "LKR";
 
   const isBaseCurrency =
-    !currency?.code || currency.code === baseCurrencyCode;
+    !currency?.code ||
+    currency.code.toUpperCase() === baseCurrencyCode.toUpperCase() ||
+    (exchangeRate?.baseCurrency &&
+      currency.code.toUpperCase() ===
+      exchangeRate.baseCurrency.toUpperCase());
 
   const handleCurrencyChange = (e) => {
     const code = e.target.value;
-    if (!code || code === baseCurrencyCode) {
+    if (
+      !code ||
+      code.toUpperCase() === baseCurrencyCode.toUpperCase() ||
+      (exchangeRate?.baseCurrency &&
+        code.toUpperCase() === exchangeRate.baseCurrency.toUpperCase())
+    ) {
       onChange({ currency: null, exchangeRate: null });
     } else {
       const found = CURRENCIES.find((c) => c.code === code);

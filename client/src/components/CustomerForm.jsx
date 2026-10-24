@@ -55,7 +55,6 @@ const CustomerForm = ({ customer, onClose, onSave }) => {
     e.preventDefault();
 
     const hasFirstName = formData.firstName?.trim();
-    const hasLastName = formData.lastName?.trim();
     const hasCompany = formData.billing?.company?.trim();
 
     if (!hasFirstName && !hasCompany) {

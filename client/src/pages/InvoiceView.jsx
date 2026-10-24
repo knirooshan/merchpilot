@@ -16,7 +16,11 @@ import { useSelector } from "react-redux";
 import InvoicePDF from "../components/InvoicePDF";
 import DeliveryReceiptPDF from "../components/DeliveryReceiptPDF";
 import PaymentModal from "../components/PaymentModal";
-import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
+import {
+  formatCurrency,
+  getDocumentCurrencySettings,
+  isForeignCurrency,
+} from "../utils/currency";
 import { formatDate } from "../utils/date";
 import { getTaxDisplay } from "../utils/taxDisplay";
 import { urlToBase64 } from "../utils/imageUtils";
@@ -113,8 +117,8 @@ const InvoiceView = () => {
       console.error("Error sending email:", error);
       alert(
         error.response?.data?.message ||
-          error.message ||
-          "Failed to send email. Please check SMTP settings.",
+        error.message ||
+        "Failed to send email. Please check SMTP settings.",
       );
     } finally {
       setSendingEmail(false);
@@ -300,33 +304,33 @@ const InvoiceView = () => {
             <p className="text-slate-600">
               Status:{" "}
               <span
-                className={`font-semibold uppercase ${
-                  invoice.status === "paid"
+                className={`font-semibold uppercase ${invoice.status === "paid"
                     ? "text-green-600"
                     : invoice.status === "overdue" ||
-                        invoice.status === "written-off"
+                      invoice.status === "written-off"
                       ? "text-red-600"
                       : "text-yellow-600"
-                }`}
+                  }`}
               >
                 {invoice.status.replace("_", " ")}
               </span>
             </p>
-            {invoice.currency?.code &&
-              invoice.currency.code !== settings?.currency?.code && (
-                <p className="text-slate-600 mt-1">
-                  Currency:{" "}
-                  <span className="font-semibold text-amber-600">
-                    {invoice.currency.code}
+            {isForeignCurrency(invoice, settings) && (
+              <p className="text-slate-600 mt-1">
+                Currency:{" "}
+                <span className="font-semibold text-amber-600">
+                  {invoice.currency.code}
+                </span>
+                {invoice.exchangeRate?.rate > 0 && (
+                  <span className="text-slate-500 text-sm ml-1">
+                    (1 {invoice.currency.code} = {invoice.exchangeRate.rate}{" "}
+                    {invoice.exchangeRate.baseCurrency ||
+                      settings?.currency?.code ||
+                      "LKR"})
                   </span>
-                  {invoice.exchangeRate?.rate > 0 && (
-                    <span className="text-slate-500 text-sm ml-1">
-                      (1 {invoice.currency.code} = {invoice.exchangeRate.rate}{" "}
-                      {invoice.exchangeRate.baseCurrency})
-                    </span>
-                  )}
-                </p>
-              )}
+                )}
+              </p>
+            )}
           </div>
           <div className="text-right">
             {settings?.logo && (
@@ -362,8 +366,7 @@ const InvoiceView = () => {
               ? `${invoice.customer.salutation} `
               : ""}
             {invoice.customer?.firstName || invoice.customer?.lastName
-              ? `${invoice.customer.firstName || ""} ${
-                  invoice.customer.lastName || ""
+              ? `${invoice.customer.firstName || ""} ${invoice.customer.lastName || ""
                 }`.trim()
               : invoice.customer?.billing?.company || "Unnamed Customer"}
           </p>

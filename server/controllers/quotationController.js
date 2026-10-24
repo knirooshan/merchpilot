@@ -1,22 +1,57 @@
 const { getTenantModels } = require("../models/tenantModels");
 const { parseStartOfDay, parseEndOfDay, getTenantTimezone } = require("../utils/dateUtils");
 
-// @desc    Get all quotations
+// @desc    Get all quotations (with optional server-side search, filters, and pagination)
 // @route   GET /api/quotations
 // @access  Private
 const getQuotations = async (req, res) => {
   try {
-    const { Quotation } = getTenantModels(req.dbConnection);
-    const { search, status, customer, startDate, endDate } = req.query;
+    const { Quotation, Customer } = getTenantModels(req.dbConnection);
+    const {
+      search,
+      status,
+      customer,
+      startDate,
+      endDate,
+      page,
+      limit,
+      pageNumber,
+      pageSize,
+      paginate,
+    } = req.query;
+
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined ||
+      paginate === "true";
 
     // Build filter object
     const filter = { status: { $ne: "deleted" } };
 
-    // Search in quotation number or notes
-    if (search) {
+    // Search in quotation number, notes, customer name, company
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: "i" };
+
+      const matchingCustomers = await Customer.find({
+        $or: [
+          { firstName: searchRegex },
+          { lastName: searchRegex },
+          { email: searchRegex },
+          { "billing.company": searchRegex },
+        ],
+      }).select("_id");
+      const matchingCustomerIds = matchingCustomers.map((c) => c._id);
+
       filter.$or = [
-        { quotationNumber: { $regex: search, $options: "i" } },
-        { notes: { $regex: search, $options: "i" } },
+        { quotationNumber: searchRegex },
+        { notes: searchRegex },
+        { customer: { $in: matchingCustomerIds } },
+        { "customerInfo.firstName": searchRegex },
+        { "customerInfo.lastName": searchRegex },
+        { "customerInfo.company": searchRegex },
+        { "customerInfo.email": searchRegex },
       ];
     }
 
@@ -34,14 +69,36 @@ const getQuotations = async (req, res) => {
     if (startDate || endDate) {
       const timezone = await getTenantTimezone(req.dbConnection);
       filter.quotationDate = {};
-      if (startDate) filter.quotationDate.$gte = parseStartOfDay(startDate, timezone);
+      if (startDate)
+        filter.quotationDate.$gte = parseStartOfDay(startDate, timezone);
       if (endDate) filter.quotationDate.$lte = parseEndOfDay(endDate, timezone);
     }
 
+    if (!isPaginated) {
+      const quotations = await Quotation.find(filter)
+        .populate("customer", "firstName lastName email billing")
+        .sort({ createdAt: -1 });
+      return res.json(quotations);
+    }
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
+
+    const total = await Quotation.countDocuments(filter);
     const quotations = await Quotation.find(filter)
       .populate("customer", "firstName lastName email billing")
-      .sort({ createdAt: -1 });
-    res.json(quotations);
+      .sort({ createdAt: -1 })
+      .limit(perPage)
+      .skip((currentPage - 1) * perPage);
+
+    res.json({
+      quotations,
+      data: quotations,
+      total,
+      page: currentPage,
+      pages: Math.ceil(total / perPage),
+      limit: perPage,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -103,8 +160,9 @@ const createQuotation = async (req, res) => {
       terms,
       quotationDate,
       validUntil,
-      currency,
-      exchangeRate,
+      currency: currency?.code ? currency : undefined,
+      exchangeRate:
+        currency?.code && exchangeRate?.rate ? exchangeRate : undefined,
     });
 
     const createdQuotation = await quotation.save();
@@ -150,6 +208,11 @@ const updateQuotation = async (req, res) => {
       Object.keys(updateData).forEach((key) => {
         quotation[key] = updateData[key];
       });
+
+      if (!quotation.currency?.code) {
+        quotation.currency = undefined;
+        quotation.exchangeRate = undefined;
+      }
 
       const updatedQuotation = await quotation.save();
       res.json(updatedQuotation);

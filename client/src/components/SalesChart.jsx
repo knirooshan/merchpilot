@@ -9,6 +9,22 @@ import {
 } from "recharts";
 import { formatCurrency } from "../utils/currency";
 
+const CustomTooltip = ({ active, payload, settings }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-slate-900 p-3 border border-slate-800 rounded shadow-lg">
+        <p className="text-sm font-medium text-slate-300">
+          {payload[0].payload.name}
+        </p>
+        <p className="text-sm text-blue-400 font-semibold">
+          Sales: {formatCurrency(payload[0].value, settings)}
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
 const SalesChart = ({ data, settings, period }) => {
   const chartTitles = {
     "7d": "Sales - Last 7 Days",
@@ -25,21 +41,6 @@ const SalesChart = ({ data, settings, period }) => {
       : period === "7d" || period === "year"
         ? { interval: 0, angle: -35, textAnchor: "end", height: 50 }
         : { interval: "preserveStartEnd" };
-  const CustomTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-slate-900 p-3 border border-slate-800 rounded shadow-lg">
-          <p className="text-sm font-medium text-slate-300">
-            {payload[0].payload.name}
-          </p>
-          <p className="text-sm text-blue-400 font-semibold">
-            Sales: {formatCurrency(payload[0].value, settings)}
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
 
   return (
     <div className="bg-slate-900 p-6 rounded-lg shadow border border-slate-800">
@@ -50,7 +51,7 @@ const SalesChart = ({ data, settings, period }) => {
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
             <XAxis dataKey="name" stroke="#94a3b8" {...xAxisProps} />
             <YAxis stroke="#94a3b8" />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip settings={settings} />} />
             <Line
               type="monotone"
               dataKey="sales"

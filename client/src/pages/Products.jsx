@@ -13,6 +13,8 @@ import {
 import { useSelector } from "react-redux";
 import { formatCurrency } from "../utils/currency";
 import ProductForm from "../components/ProductForm";
+import Pagination from "../components/Pagination";
+import { useDebounce } from "../utils/useDebounce";
 
 const Products = () => {
   const { user } = useSelector((state) => state.auth);
@@ -23,20 +25,52 @@ const Products = () => {
   const [pushingMedusa, setPushingMedusa] = useState(false);
   const [pushingProductId, setPushingProductId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebounce(searchTerm, 350);
   const [sortBy, setSortBy] = useState("createdAt_desc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalProducts, setTotalProducts] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
 
+  // Reset to page 1 on search or sort change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, sortBy]);
+
   useEffect(() => {
     fetchProducts();
-  }, []);
+  }, [page, pageSize, debouncedSearch, sortBy]);
 
   const fetchProducts = async () => {
     try {
+      setLoading(true);
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.get(ENDPOINTS.PRODUCTS, config);
-      setProducts(data);
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize),
+        sortBy,
+      });
+      if (debouncedSearch && debouncedSearch.trim()) {
+        params.append("search", debouncedSearch.trim());
+      }
+
+      const { data } = await axios.get(
+        `${ENDPOINTS.PRODUCTS}?${params.toString()}`,
+        config,
+      );
+
+      if (Array.isArray(data)) {
+        setProducts(data);
+        setTotalProducts(data.length);
+        setTotalPages(Math.ceil(data.length / pageSize) || 1);
+      } else {
+        setProducts(data.products || data.data || []);
+        setTotalProducts(data.total || 0);
+        setTotalPages(data.pages || 1);
+      }
       setLoading(false);
     } catch (error) {
       console.error("Error fetching products:", error);
@@ -142,7 +176,7 @@ const Products = () => {
         const token = user.token;
         const config = { headers: { Authorization: `Bearer ${token}` } };
         await axios.delete(ENDPOINTS.PRODUCT_BY_ID(id), config);
-        setProducts(products.filter((p) => p._id !== id));
+        await fetchProducts();
       } catch (error) {
         console.error("Error deleting product:", error);
         alert("Error deleting product");
@@ -156,54 +190,28 @@ const Products = () => {
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
       if (editingProduct) {
-        const { data } = await axios.put(
+        await axios.put(
           ENDPOINTS.PRODUCT_BY_ID(editingProduct._id),
           productData,
           config,
         );
-        setProducts(
-          products.map((p) => (p._id === editingProduct._id ? data : p)),
-        );
       } else {
-        const { data } = await axios.post(
+        await axios.post(
           ENDPOINTS.PRODUCTS,
           productData,
           config,
         );
-        setProducts([...products, data]);
       }
       setShowForm(false);
+      await fetchProducts();
     } catch (error) {
       console.error("Error saving product:", error);
       alert("Error saving product");
     }
   };
 
-  const filteredProducts = products
-    .filter(
-      (product) =>
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.sku?.toLowerCase().includes(searchTerm.toLowerCase()),
-    )
-    .sort((a, b) => {
-      switch (sortBy) {
-        case "name_asc":
-          return a.name.localeCompare(b.name);
-        case "name_desc":
-          return b.name.localeCompare(a.name);
-        case "price_asc":
-          return (a.price || 0) - (b.price || 0);
-        case "price_desc":
-          return (b.price || 0) - (a.price || 0);
-        case "createdAt_asc":
-          return new Date(a.createdAt) - new Date(b.createdAt);
-        case "createdAt_desc":
-        default:
-          return new Date(b.createdAt) - new Date(a.createdAt);
-      }
-    });
-
-  if (loading) return <div className="text-white">Loading products...</div>;
+  if (loading && products.length === 0)
+    return <div className="text-white">Loading products...</div>;
 
   return (
     <div className="space-y-6">
@@ -305,7 +313,7 @@ const Products = () => {
               </tr>
             </thead>
             <tbody className="bg-slate-900 divide-y divide-slate-800">
-              {filteredProducts.map((product) => (
+              {products.map((product) => (
                 <tr key={product._id} className="hover:bg-slate-800/50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     {product.images && product.images[0] ? (
@@ -342,12 +350,11 @@ const Products = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
-                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        product.status === "publish" ||
-                        product.status === "published"
+                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${product.status === "publish" ||
+                          product.status === "published"
                           ? "bg-green-900/50 text-green-400 border border-green-800"
                           : "bg-slate-800 text-slate-400 border border-slate-700"
-                      }`}
+                        }`}
                     >
                       {product.status.charAt(0).toUpperCase() +
                         product.status.slice(1)}
@@ -416,12 +423,23 @@ const Products = () => {
             </tbody>
           </table>
         </div>
-        {filteredProducts.length === 0 && (
+        {products.length === 0 && !loading && (
           <div className="p-6 text-center text-slate-500">
-            No products found. Try syncing from WooCommerce or adding a new
-            product.
+            No products found. Try adjusting your search or adding a new product.
           </div>
         )}
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={totalProducts}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          }}
+          itemName="products"
+        />
       </div>
 
       {showForm && (

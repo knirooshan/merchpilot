@@ -45,22 +45,58 @@ const generateTaxInvoiceNumber = async (Invoice, settings, invoiceDate) => {
   return `${yy}${mmm}_${dept}_${serial}`;
 };
 
-// @desc    Get all invoices
+// @desc    Get all invoices (with optional server-side search, filters, and pagination)
 // @route   GET /api/invoices
 // @access  Private
 const getInvoices = async (req, res) => {
   try {
-    const { Invoice } = getTenantModels(req.dbConnection);
-    const { search, status, customer, startDate, endDate } = req.query;
+    const { Invoice, Customer } = getTenantModels(req.dbConnection);
+    const {
+      search,
+      status,
+      customer,
+      startDate,
+      endDate,
+      page,
+      limit,
+      pageNumber,
+      pageSize,
+      paginate,
+    } = req.query;
+
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined ||
+      paginate === "true";
 
     // Build filter object
     const filter = { status: { $ne: "deleted" } };
 
-    // Search in invoice number or notes
-    if (search) {
+    // Search in invoice number, tax invoice number, notes, customer name, company
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: "i" };
+
+      const matchingCustomers = await Customer.find({
+        $or: [
+          { firstName: searchRegex },
+          { lastName: searchRegex },
+          { email: searchRegex },
+          { "billing.company": searchRegex },
+        ],
+      }).select("_id");
+      const matchingCustomerIds = matchingCustomers.map((c) => c._id);
+
       filter.$or = [
-        { invoiceNumber: { $regex: search, $options: "i" } },
-        { notes: { $regex: search, $options: "i" } },
+        { invoiceNumber: searchRegex },
+        { taxInvoiceNumber: searchRegex },
+        { notes: searchRegex },
+        { customer: { $in: matchingCustomerIds } },
+        { "customerInfo.firstName": searchRegex },
+        { "customerInfo.lastName": searchRegex },
+        { "customerInfo.company": searchRegex },
+        { "customerInfo.email": searchRegex },
       ];
     }
 
@@ -83,11 +119,33 @@ const getInvoices = async (req, res) => {
       if (endDate) filter.invoiceDate.$lte = parseEndOfDay(endDate, timezone);
     }
 
+    if (!isPaginated) {
+      const invoices = await Invoice.find(filter)
+        .populate("customer", "firstName lastName email billing")
+        .populate("payments")
+        .sort({ createdAt: -1 });
+      return res.json(invoices);
+    }
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
+
+    const total = await Invoice.countDocuments(filter);
     const invoices = await Invoice.find(filter)
       .populate("customer", "firstName lastName email billing")
       .populate("payments")
-      .sort({ createdAt: -1 });
-    res.json(invoices);
+      .sort({ createdAt: -1 })
+      .limit(perPage)
+      .skip((currentPage - 1) * perPage);
+
+    res.json({
+      invoices,
+      data: invoices,
+      total,
+      page: currentPage,
+      pages: Math.ceil(total / perPage),
+      limit: perPage,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -223,8 +281,9 @@ const createInvoice = async (req, res) => {
       reference,
       taxInvoiceNumber,
       placeOfSupply: resolvedPlaceOfSupply,
-      currency,
-      exchangeRate,
+      currency: currency?.code ? currency : undefined,
+      exchangeRate:
+        currency?.code && exchangeRate?.rate ? exchangeRate : undefined,
       invoiceType: invoiceType || "tax",
     });
 
@@ -331,6 +390,11 @@ const updateInvoice = async (req, res) => {
       Object.keys(updateData).forEach((key) => {
         invoice[key] = updateData[key];
       });
+
+      if (!invoice.currency?.code) {
+        invoice.currency = undefined;
+        invoice.exchangeRate = undefined;
+      }
 
       const updatedInvoice = await invoice.save();
       res.json(updatedInvoice);

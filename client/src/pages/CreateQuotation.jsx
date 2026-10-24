@@ -4,7 +4,11 @@ import { ENDPOINTS } from "../config/api";
 import { useNavigate } from "react-router-dom";
 import { Plus, Trash, Save, Edit2 } from "lucide-react";
 import { useSelector } from "react-redux";
-import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
+import {
+  formatCurrency,
+  getDocumentCurrencySettings,
+  isForeignCurrency,
+} from "../utils/currency";
 import { calculateTotals as calcTotals } from "../utils/taxCalculations";
 import CustomerForm from "../components/CustomerForm";
 import CurrencySelector from "../components/CurrencySelector";
@@ -108,6 +112,7 @@ const CreateQuotation = () => {
     e.preventDefault();
     const totals = calculateTotals();
 
+    const isForeign = isForeignCurrency({ currency, exchangeRate }, settings);
     try {
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
@@ -120,8 +125,8 @@ const CreateQuotation = () => {
           tax: totals.tax,
           taxRate: formData.taxRate,
           total: totals.total,
-          currency: currency || undefined,
-          exchangeRate: exchangeRate || undefined,
+          currency: isForeign ? currency : undefined,
+          exchangeRate: isForeign ? exchangeRate : undefined,
         },
         config,
       );

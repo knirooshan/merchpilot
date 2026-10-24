@@ -9,6 +9,8 @@ import { useSelector } from "react-redux";
 import { formatCurrency } from "../utils/currency";
 import { formatDate } from "../utils/date";
 import DateInput from "../components/DateInput";
+import Pagination from "../components/Pagination";
+import { useDebounce } from "../utils/useDebounce";
 import { ENDPOINTS } from "../config/api";
 
 const Expenses = () => {
@@ -23,6 +25,11 @@ const Expenses = () => {
   const [pendingUpdate, setPendingUpdate] = useState(null);
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalExpenses, setTotalExpenses] = useState(0);
   const [filters, setFilters] = useState({
     category: "all",
     vendor: "all",
@@ -46,9 +53,16 @@ const Expenses = () => {
   const [vendors, setVendors] = useState([]);
 
   useEffect(() => {
-    fetchExpenses();
     fetchVendors();
-  }, [user.token, search, filters]);
+  }, [user.token]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filters]);
+
+  useEffect(() => {
+    fetchExpenses();
+  }, [page, pageSize, debouncedSearch, filters, user.token]);
 
   const fetchVendors = async () => {
     try {
@@ -63,11 +77,17 @@ const Expenses = () => {
 
   const fetchExpenses = async () => {
     try {
+      setLoading(true);
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      const params = new URLSearchParams();
-      if (search) params.append("search", search);
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize),
+      });
+      if (debouncedSearch && debouncedSearch.trim()) {
+        params.append("search", debouncedSearch.trim());
+      }
       if (filters.category !== "all")
         params.append("category", filters.category);
       if (filters.vendor !== "all") params.append("vendor", filters.vendor);
@@ -78,7 +98,17 @@ const Expenses = () => {
         `${ENDPOINTS.EXPENSES}?${params.toString()}`,
         config,
       );
-      setExpenses(expensesRes.data);
+
+      const data = expensesRes.data;
+      if (Array.isArray(data)) {
+        setExpenses(data);
+        setTotalExpenses(data.length);
+        setTotalPages(Math.ceil(data.length / pageSize) || 1);
+      } else {
+        setExpenses(data.expenses || data.data || []);
+        setTotalExpenses(data.total || 0);
+        setTotalPages(data.pages || 1);
+      }
       setLoading(false);
     } catch (error) {
       console.error("Error fetching expenses:", error);
@@ -624,11 +654,23 @@ const Expenses = () => {
             ))}
           </tbody>
         </table>
-        {expenses.length === 0 && (
+        {expenses.length === 0 && !loading && (
           <div className="p-6 text-center text-slate-500">
-            No expenses recorded.
+            No expenses recorded. Try adjusting your search or filters.
           </div>
         )}
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={totalExpenses}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          }}
+          itemName="expenses"
+        />
       </div>
 
       <ReasonModal

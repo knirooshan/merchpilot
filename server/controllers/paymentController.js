@@ -70,19 +70,53 @@ const createPayment = async (req, res) => {
 // @access  Private
 const getPayments = async (req, res) => {
   try {
-    const { Payment } = getTenantModels(req.dbConnection);
-    const { search, method, source, customer, startDate, endDate } = req.query;
-    const pageSize = 20;
-    const page = Number(req.query.pageNumber) || 1;
+    const { Payment, Customer, Invoice } = getTenantModels(req.dbConnection);
+    const {
+      search,
+      method,
+      source,
+      customer,
+      startDate,
+      endDate,
+      page,
+      limit,
+      pageNumber,
+      pageSize,
+    } = req.query;
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
 
     // Build filter object
     const filter = { status: { $ne: "deleted" } };
 
-    // Search in reference or notes
-    if (search) {
+    // Search in reference, notes, customer name, or invoice number
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: "i" };
+
+      const matchingCustomers = await Customer.find({
+        $or: [
+          { firstName: searchRegex },
+          { lastName: searchRegex },
+          { email: searchRegex },
+          { "billing.company": searchRegex },
+        ],
+      }).select("_id");
+      const matchingCustomerIds = matchingCustomers.map((c) => c._id);
+
+      const matchingInvoices = await Invoice.find({
+        $or: [
+          { invoiceNumber: searchRegex },
+          { taxInvoiceNumber: searchRegex },
+        ],
+      }).select("_id");
+      const matchingInvoiceIds = matchingInvoices.map((inv) => inv._id);
+
       filter.$or = [
-        { reference: { $regex: search, $options: "i" } },
-        { notes: { $regex: search, $options: "i" } },
+        { reference: searchRegex },
+        { notes: searchRegex },
+        { customer: { $in: matchingCustomerIds } },
+        { invoice: { $in: matchingInvoiceIds } },
       ];
     }
 
@@ -115,13 +149,16 @@ const getPayments = async (req, res) => {
       .populate("invoice", "invoiceNumber")
       .populate("order", "orderNumber")
       .sort({ date: -1 })
-      .limit(pageSize)
-      .skip(pageSize * (page - 1));
+      .limit(perPage)
+      .skip(perPage * (currentPage - 1));
 
     res.json({
       payments,
-      page,
-      pages: Math.ceil(count / pageSize),
+      data: payments,
+      total: count,
+      page: currentPage,
+      pages: Math.ceil(count / perPage),
+      limit: perPage,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

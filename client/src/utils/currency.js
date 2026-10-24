@@ -72,3 +72,30 @@ export const getDocumentCurrencySettings = (document, settings) => {
   }
   return settings;
 };
+
+/**
+ * Check if a document (quotation or invoice) is in a foreign currency.
+ * Returns false if it's in the base currency (or no currency specified).
+ * @param {object} document - Quotation or Invoice object (or { currency, exchangeRate })
+ * @param {object} settings - Global store settings
+ * @returns {boolean} True if foreign currency, false if base currency
+ */
+export const isForeignCurrency = (document, settings) => {
+  if (!document?.currency?.code) return false;
+  const baseCode =
+    settings?.currency?.code ||
+    document?.exchangeRate?.baseCurrency ||
+    "LKR";
+  if (document.currency.code.toUpperCase() === baseCode.toUpperCase()) {
+    return false;
+  }
+  if (
+    document?.exchangeRate?.baseCurrency &&
+    document.currency.code.toUpperCase() ===
+    document.exchangeRate.baseCurrency.toUpperCase()
+  ) {
+    return false;
+  }
+  return true;
+};
+

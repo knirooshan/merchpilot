@@ -2,22 +2,61 @@ const { getTenantModels } = require("../models/tenantModels");
 const { getWooOrders } = require("../services/wooService");
 const { parseStartOfDay, parseEndOfDay, getTenantTimezone } = require("../utils/dateUtils");
 
-// @desc    Get all orders
+// @desc    Get all orders (with optional server-side search, filters, and pagination)
 // @route   GET /api/orders
 // @access  Private
 const getOrders = async (req, res) => {
   try {
-    const { Order } = getTenantModels(req.dbConnection);
-    const { search, status, customer, startDate, endDate } = req.query;
+    const { Order, Customer } = getTenantModels(req.dbConnection);
+    const {
+      search,
+      status,
+      customer,
+      startDate,
+      endDate,
+      page,
+      limit,
+      pageNumber,
+      pageSize,
+      paginate,
+    } = req.query;
+
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined ||
+      paginate === "true";
 
     // Build filter object
     const filter = {};
 
-    // Search in order number or notes
-    if (search) {
+    // Search in order number, notes, customer name, shipping/billing info
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: "i" };
+
+      // Find any customers matching name/email/company
+      const matchingCustomers = await Customer.find({
+        $or: [
+          { firstName: searchRegex },
+          { lastName: searchRegex },
+          { email: searchRegex },
+          { "billing.company": searchRegex },
+        ],
+      }).select("_id");
+      const matchingCustomerIds = matchingCustomers.map((c) => c._id);
+
       filter.$or = [
-        { orderNumber: { $regex: search, $options: "i" } },
-        { notes: { $regex: search, $options: "i" } },
+        { orderNumber: searchRegex },
+        { notes: searchRegex },
+        { customer: { $in: matchingCustomerIds } },
+        { "shipping.firstName": searchRegex },
+        { "shipping.lastName": searchRegex },
+        { "shipping.company": searchRegex },
+        { "billing.firstName": searchRegex },
+        { "billing.lastName": searchRegex },
+        { "billing.email": searchRegex },
+        { "billing.phone": searchRegex },
       ];
     }
 
@@ -35,14 +74,36 @@ const getOrders = async (req, res) => {
     if (startDate || endDate) {
       const timezone = await getTenantTimezone(req.dbConnection);
       filter.dateCreated = {};
-      if (startDate) filter.dateCreated.$gte = parseStartOfDay(startDate, timezone);
+      if (startDate)
+        filter.dateCreated.$gte = parseStartOfDay(startDate, timezone);
       if (endDate) filter.dateCreated.$lte = parseEndOfDay(endDate, timezone);
     }
 
+    if (!isPaginated) {
+      const orders = await Order.find(filter)
+        .populate("customer")
+        .sort({ dateCreated: -1 });
+      return res.json(orders);
+    }
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
+
+    const total = await Order.countDocuments(filter);
     const orders = await Order.find(filter)
       .populate("customer")
-      .sort({ dateCreated: -1 });
-    res.json(orders);
+      .sort({ dateCreated: -1 })
+      .limit(perPage)
+      .skip((currentPage - 1) * perPage);
+
+    res.json({
+      orders,
+      data: orders,
+      total,
+      page: currentPage,
+      pages: Math.ceil(total / perPage),
+      limit: perPage,
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: error.message });
@@ -205,9 +266,8 @@ const syncOrders = async (req, res) => {
         paymentMethod:
           order.payment_method_title || order.payment_method || "WooCommerce",
         dueDate: order.date_paid ? new Date(order.date_paid) : null,
-        notes: `WooCommerce Order #${order.number || order.id}${
-          order.customer_note ? "\n" + order.customer_note : ""
-        }`,
+        notes: `WooCommerce Order #${order.number || order.id}${order.customer_note ? "\n" + order.customer_note : ""
+          }`,
       };
 
       // Check if invoice already exists for this order
@@ -262,9 +322,8 @@ const syncOrders = async (req, res) => {
             order: savedOrder._id,
             invoice: invoice._id, // Link to the invoice we just created/updated
             customer: customer ? customer._id : null,
-            notes: `Auto-created from WooCommerce Order #${
-              order.number || order.id
-            }. Method: ${order.payment_method_title || "Unknown"}`,
+            notes: `Auto-created from WooCommerce Order #${order.number || order.id
+              }. Method: ${order.payment_method_title || "Unknown"}`,
           });
 
           // Update invoice status/paid amount since we just added a payment

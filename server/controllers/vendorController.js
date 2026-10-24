@@ -1,13 +1,62 @@
 const { getTenantModels } = require("../models/tenantModels");
 
-// @desc    Get all vendors
+// @desc    Get all vendors (with optional server-side search and pagination)
 // @route   GET /api/vendors
 // @access  Private
 const getVendors = async (req, res) => {
   try {
     const { Vendor } = getTenantModels(req.dbConnection);
-    const vendors = await Vendor.find({}).sort({ createdAt: -1 });
-    res.json(vendors);
+    const {
+      search,
+      page,
+      limit,
+      pageNumber,
+      pageSize,
+      paginate,
+    } = req.query;
+
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined ||
+      paginate === "true";
+
+    const filter = {};
+
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: "i" };
+      filter.$or = [
+        { name: searchRegex },
+        { email: searchRegex },
+        { phone: searchRegex },
+        { contactPerson: searchRegex },
+        { address: searchRegex },
+      ];
+    }
+
+    if (!isPaginated) {
+      const vendors = await Vendor.find(filter).sort({ createdAt: -1 });
+      return res.json(vendors);
+    }
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
+
+    const total = await Vendor.countDocuments(filter);
+    const vendors = await Vendor.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(perPage)
+      .skip((currentPage - 1) * perPage);
+
+    res.json({
+      vendors,
+      data: vendors,
+      total,
+      page: currentPage,
+      pages: Math.ceil(total / perPage),
+      limit: perPage,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

@@ -6,6 +6,8 @@ import { Plus, Edit, Trash2, Eye } from "lucide-react";
 import CustomerForm from "../components/CustomerForm";
 import CustomerDetailModal from "../components/CustomerDetailModal";
 import SearchBar from "../components/SearchBar";
+import Pagination from "../components/Pagination";
+import { useDebounce } from "../utils/useDebounce";
 
 const Customers = () => {
   const { user } = useSelector((state) => state.auth);
@@ -15,30 +17,54 @@ const Customers = () => {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [viewingCustomerId, setViewingCustomerId] = useState(null);
   const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    fetchCustomers();
-  }, [search]);
+  const debouncedSearch = useDebounce(search, 350);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCustomers, setTotalCustomers] = useState(0);
 
   const fetchCustomers = async () => {
     try {
+      setLoading(true);
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      const params = new URLSearchParams();
-      if (search && search.length >= 3) params.append("search", search);
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize),
+      });
+      if (debouncedSearch && debouncedSearch.trim()) {
+        params.append("search", debouncedSearch.trim());
+      }
 
       const { data } = await axios.get(
         `${ENDPOINTS.CUSTOMERS}?${params.toString()}`,
         config,
       );
-      setCustomers(data);
+
+      if (Array.isArray(data)) {
+        setCustomers(data);
+        setTotalCustomers(data.length);
+        setTotalPages(Math.ceil(data.length / pageSize) || 1);
+      } else {
+        setCustomers(data.customers || data.data || []);
+        setTotalCustomers(data.total || 0);
+        setTotalPages(data.pages || 1);
+      }
       setLoading(false);
     } catch (error) {
       console.error("Error fetching customers:", error);
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
+  useEffect(() => {
+    fetchCustomers();
+  }, [page, pageSize, debouncedSearch]);
 
   const openModal = (customer = null) => {
     setEditingCustomer(customer);
@@ -143,8 +169,7 @@ const Customers = () => {
                 <tr key={customer._id} className="hover:bg-slate-800/50">
                   <td className="px-6 py-4 whitespace-nowrap font-medium text-white">
                     {customer.firstName || customer.lastName
-                      ? `${customer.firstName || ""} ${
-                          customer.lastName || ""
+                      ? `${customer.firstName || ""} ${customer.lastName || ""
                         }`.trim()
                       : customer.billing?.company || "Unnamed"}
                   </td>
@@ -194,11 +219,23 @@ const Customers = () => {
             </tbody>
           </table>
         </div>
-        {customers.length === 0 && (
+        {customers.length === 0 && !loading && (
           <div className="p-6 text-center text-slate-500">
-            No customers found. Add one to get started.
+            No customers found. Try adjusting your search or add a new customer.
           </div>
         )}
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={totalCustomers}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          }}
+          itemName="customers"
+        />
       </div>
 
       {/* Modal */}

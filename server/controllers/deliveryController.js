@@ -45,29 +45,96 @@ const updateDelivery = async (req, res) => {
   }
 };
 
-// @desc Get active delivery queue
+// @desc Get active delivery queue (with optional search and pagination)
 // @route GET /api/deliveries/queue
 // @access Private
 const getDeliveryQueue = async (req, res) => {
   try {
-    const { Delivery, Invoice } = getTenantModels(req.dbConnection);
+    const { Delivery } = getTenantModels(req.dbConnection);
+    const {
+      search,
+      status,
+      page,
+      limit,
+      pageNumber,
+      pageSize,
+      paginate,
+    } = req.query;
 
-    // Find active deliveries
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined ||
+      paginate === "true";
+
+    const statusFilter =
+      status && status !== "all"
+        ? [status]
+        : ["pending", "preparing", "dispatched"];
+
+    // Find deliveries matching active statuses
     const deliveries = await Delivery.find({
-      status: { $in: ["pending", "preparing", "dispatched"] },
+      status: { $in: statusFilter },
     }).populate({
       path: "invoice",
       match: { status: { $nin: ["deleted", "cancelled", "written-off"] } },
-      populate: { path: "customer", select: "firstName lastName email phone company" }
+      populate: {
+        path: "customer",
+        select: "firstName lastName email phone company",
+      },
     });
 
     // Filter out deliveries where invoice is null (due to match condition)
-    const validDeliveries = deliveries.filter(d => d.invoice != null);
+    let validDeliveries = deliveries.filter((d) => d.invoice != null);
+
+    // Filter by search term if provided
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      validDeliveries = validDeliveries.filter((d) => {
+        const invNo = d.invoice?.invoiceNumber?.toLowerCase() || "";
+        const tracking = (d.trackingNumbers || []).join(" ").toLowerCase();
+        const custName = `${d.invoice?.customer?.firstName || ""} ${d.invoice?.customer?.lastName || ""}`.toLowerCase();
+        const custEmail = (d.invoice?.customer?.email || "").toLowerCase();
+        const custCompany = (d.invoice?.customer?.company || "").toLowerCase();
+
+        return (
+          invNo.includes(q) ||
+          tracking.includes(q) ||
+          custName.includes(q) ||
+          custEmail.includes(q) ||
+          custCompany.includes(q)
+        );
+      });
+    }
 
     // Sort by invoice date (oldest first for queue management)
-    validDeliveries.sort((a, b) => new Date(a.invoice.invoiceDate) - new Date(b.invoice.invoiceDate));
+    validDeliveries.sort(
+      (a, b) =>
+        new Date(a.invoice.invoiceDate) - new Date(b.invoice.invoiceDate),
+    );
 
-    res.json(validDeliveries);
+    if (!isPaginated) {
+      return res.json(validDeliveries);
+    }
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
+    const total = validDeliveries.length;
+
+    const paged = validDeliveries.slice(
+      (currentPage - 1) * perPage,
+      currentPage * perPage,
+    );
+
+    res.json({
+      deliveries: paged,
+      data: paged,
+      total,
+      page: currentPage,
+      pages: Math.ceil(total / perPage),
+      limit: perPage,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

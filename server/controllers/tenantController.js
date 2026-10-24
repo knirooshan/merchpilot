@@ -8,14 +8,68 @@ const getTenantModel = () => {
   return conn.model("Tenant");
 };
 
-// @desc    Get all tenants
+// @desc    Get all tenants (with optional search, status filter, and pagination)
 // @route   GET /api/tenants
 // @access  Super Admin
 const getTenants = async (req, res) => {
   try {
     const Tenant = getTenantModel();
-    const tenants = await Tenant.find({}).sort({ createdAt: -1 });
-    res.json(tenants);
+    const {
+      search,
+      status,
+      page,
+      limit,
+      pageNumber,
+      pageSize,
+      paginate,
+    } = req.query;
+
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined ||
+      paginate === "true";
+
+    const filter = {};
+
+    if (search && search.trim()) {
+      const searchRegex = { $regex: search.trim(), $options: "i" };
+      filter.$or = [
+        { name: searchRegex },
+        { subdomain: searchRegex },
+        { email: searchRegex },
+        { dbName: searchRegex },
+      ];
+    }
+
+    if (status && status !== "all") {
+      if (status === "active") filter.isActive = true;
+      if (status === "inactive") filter.isActive = false;
+    }
+
+    if (!isPaginated) {
+      const tenants = await Tenant.find(filter).sort({ createdAt: -1 });
+      return res.json(tenants);
+    }
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
+
+    const total = await Tenant.countDocuments(filter);
+    const tenants = await Tenant.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(perPage)
+      .skip((currentPage - 1) * perPage);
+
+    res.json({
+      tenants,
+      data: tenants,
+      total,
+      page: currentPage,
+      pages: Math.ceil(total / perPage),
+      limit: perPage,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

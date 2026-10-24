@@ -7,7 +7,11 @@ import {
   StyleSheet,
   Image,
 } from "@react-pdf/renderer";
-import { formatCurrency, getDocumentCurrencySettings } from "../utils/currency";
+import {
+  formatCurrency,
+  getDocumentCurrencySettings,
+  isForeignCurrency,
+} from "../utils/currency";
 import { formatDate } from "../utils/date";
 import { getTaxDisplay } from "../utils/taxDisplay";
 import { renderHtmlToPdf } from "../utils/pdfUtils.jsx";
@@ -461,15 +465,6 @@ const InvoicePDF = ({ invoice, settings }) => {
     .filter(Boolean)
     .join("\n");
 
-  const supplierAddress = [
-    settings?.address?.street || "",
-    [settings?.address?.city || "", settings?.address?.zip || ""]
-      .filter(Boolean)
-      .join(", "),
-  ]
-    .filter(Boolean)
-    .join(", ");
-
   return (
     <Document>
       <Page size="A4" style={styles.page}>
@@ -556,12 +551,12 @@ const InvoicePDF = ({ invoice, settings }) => {
             ) : null}
             {(invoice.customer?.billing?.phone ||
               invoice.customerInfo?.phone) && (
-              <Text style={styles.infoText}>
-                Tel:{" "}
-                {invoice.customer?.billing?.phone ||
-                  invoice.customerInfo?.phone}
-              </Text>
-            )}
+                <Text style={styles.infoText}>
+                  Tel:{" "}
+                  {invoice.customer?.billing?.phone ||
+                    invoice.customerInfo?.phone}
+                </Text>
+              )}
             {(invoice.customer?.email || invoice.customerInfo?.email) && (
               <Text style={styles.infoText}>
                 {invoice.customer?.email || invoice.customerInfo?.email}
@@ -585,8 +580,8 @@ const InvoicePDF = ({ invoice, settings }) => {
             <Text style={styles.detailValue}>
               {formatDate(
                 invoice.deliveryDate ||
-                  invoice.invoiceDate ||
-                  invoice.createdAt,
+                invoice.invoiceDate ||
+                invoice.createdAt,
                 {
                   dateTime: { dateFormat: "MM/DD/YYYY" },
                 },
@@ -605,18 +600,20 @@ const InvoicePDF = ({ invoice, settings }) => {
               <Text style={styles.detailValue}>{invoice.reference}</Text>
             </View>
           )}
-          {invoice.currency?.code &&
-            invoice.currency.code !== settings?.currency?.code && (
-              <View style={styles.detailCell}>
-                <Text style={styles.detailLabel}>Currency</Text>
-                <Text style={[styles.detailValue, { color: "#d97706" }]}>
-                  {invoice.currency.code}
-                  {invoice.exchangeRate?.rate > 0
-                    ? `  (1 ${invoice.currency.code} = ${invoice.exchangeRate.rate} ${invoice.exchangeRate.baseCurrency})`
-                    : ""}
-                </Text>
-              </View>
-            )}
+          {isForeignCurrency(invoice, settings) && (
+            <View style={styles.detailCell}>
+              <Text style={styles.detailLabel}>Currency</Text>
+              <Text style={[styles.detailValue, { color: "#d97706" }]}>
+                {invoice.currency.code}
+                {invoice.exchangeRate?.rate > 0
+                  ? `  (1 ${invoice.currency.code} = ${invoice.exchangeRate.rate} ${invoice.exchangeRate.baseCurrency ||
+                  settings?.currency?.code ||
+                  "LKR"
+                  })`
+                  : ""}
+              </Text>
+            </View>
+          )}
           {invoice.dueDate === undefined || !invoice.placeOfSupply ? (
             /* Fill empty cell to keep alignment tidy */
             <View style={styles.detailCell} />
@@ -800,42 +797,42 @@ const InvoicePDF = ({ invoice, settings }) => {
         {(hasContent(invoice.notes) ||
           hasContent(invoice.terms) ||
           hasContent(invoice.deliveryNote)) && (
-          <View style={styles.notes}>
-            {hasContent(invoice.notes) && (
-              <View style={{ marginBottom: 6 }}>
-                <Text style={styles.noteTitle}>Notes</Text>
-                <View>
-                  {renderHtmlToPdf(invoice.notes, {
-                    fontSize: 8,
-                    color: "#1F2937",
-                  })}
+            <View style={styles.notes}>
+              {hasContent(invoice.notes) && (
+                <View style={{ marginBottom: 6 }}>
+                  <Text style={styles.noteTitle}>Notes</Text>
+                  <View>
+                    {renderHtmlToPdf(invoice.notes, {
+                      fontSize: 8,
+                      color: "#1F2937",
+                    })}
+                  </View>
                 </View>
-              </View>
-            )}
-            {hasContent(invoice.terms) && (
-              <View style={{ marginBottom: 6 }}>
-                <Text style={styles.noteTitle}>Terms & Conditions</Text>
-                <View>
-                  {renderHtmlToPdf(invoice.terms, {
-                    fontSize: 8,
-                    color: "#1F2937",
-                  })}
+              )}
+              {hasContent(invoice.terms) && (
+                <View style={{ marginBottom: 6 }}>
+                  <Text style={styles.noteTitle}>Terms & Conditions</Text>
+                  <View>
+                    {renderHtmlToPdf(invoice.terms, {
+                      fontSize: 8,
+                      color: "#1F2937",
+                    })}
+                  </View>
                 </View>
-              </View>
-            )}
-            {hasContent(invoice.deliveryNote) && (
-              <View>
-                <Text style={styles.noteTitle}>Delivery Note</Text>
+              )}
+              {hasContent(invoice.deliveryNote) && (
                 <View>
-                  {renderHtmlToPdf(invoice.deliveryNote, {
-                    fontSize: 8,
-                    color: "#1F2937",
-                  })}
+                  <Text style={styles.noteTitle}>Delivery Note</Text>
+                  <View>
+                    {renderHtmlToPdf(invoice.deliveryNote, {
+                      fontSize: 8,
+                      color: "#1F2937",
+                    })}
+                  </View>
                 </View>
-              </View>
-            )}
-          </View>
-        )}
+              )}
+            </View>
+          )}
 
         {/* ── Footer ── */}
         <View style={styles.footer}>

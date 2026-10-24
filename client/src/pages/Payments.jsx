@@ -8,6 +8,8 @@ import PaymentModal from "../components/PaymentModal";
 import ReasonModal from "../components/ReasonModal";
 import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
+import Pagination from "../components/Pagination";
+import { useDebounce } from "../utils/useDebounce";
 import { ENDPOINTS } from "../config/api";
 
 const Payments = () => {
@@ -16,13 +18,16 @@ const Payments = () => {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [pages, setPages] = useState(1);
+  const [totalPayments, setTotalPayments] = useState(0);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [showReasonModal, setShowReasonModal] = useState(false);
   const [pendingPaymentData, setPendingPaymentData] = useState(null);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
   const [filters, setFilters] = useState({
     method: "all",
     source: "all",
@@ -30,17 +35,19 @@ const Payments = () => {
     endDate: "",
   });
 
-  useEffect(() => {
-    fetchData();
-  }, [page, search, filters]);
-
   const fetchData = async () => {
     try {
+      setLoading(true);
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
-      const params = new URLSearchParams({ pageNumber: page });
-      if (search) params.append("search", search);
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize),
+      });
+      if (debouncedSearch && debouncedSearch.trim()) {
+        params.append("search", debouncedSearch.trim());
+      }
       if (filters.method !== "all") params.append("method", filters.method);
       if (filters.source !== "all") params.append("source", filters.source);
       if (filters.startDate) params.append("startDate", filters.startDate);
@@ -51,14 +58,30 @@ const Payments = () => {
         config
       );
 
-      setPayments(paymentsRes.data.payments);
-      setPages(paymentsRes.data.pages);
+      const data = paymentsRes.data;
+      if (Array.isArray(data)) {
+        setPayments(data);
+        setTotalPayments(data.length);
+        setPages(Math.ceil(data.length / pageSize) || 1);
+      } else {
+        setPayments(data.payments || data.data || []);
+        setTotalPayments(data.total || 0);
+        setPages(data.pages || 1);
+      }
       setLoading(false);
     } catch (error) {
       console.error("Error fetching data:", error);
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filters]);
+
+  useEffect(() => {
+    fetchData();
+  }, [page, pageSize, debouncedSearch, filters]);
 
   const resetFilters = () => {
     setSearch("");
@@ -303,8 +326,7 @@ const Payments = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-white">
                     {payment.customer?.firstName || payment.customer?.lastName
-                      ? `${payment.customer.firstName || ""} ${
-                          payment.customer.lastName || ""
+                      ? `${payment.customer.firstName || ""} ${payment.customer.lastName || ""
                         }`.trim()
                       : payment.customer?.billing?.company || "N/A"}
                   </td>
@@ -348,32 +370,23 @@ const Payments = () => {
             </tbody>
           </table>
         </div>
-        {payments.length === 0 && (
+        {payments.length === 0 && !loading && (
           <div className="p-6 text-center text-slate-500">
-            No payments found.
+            No payments found. Try adjusting your search or filters.
           </div>
         )}
-
-        {/* Pagination */}
-        {pages > 1 && (
-          <div className="px-6 py-4 flex justify-center border-t border-slate-800">
-            <nav className="flex gap-2">
-              {[...Array(pages).keys()].map((x) => (
-                <button
-                  key={x + 1}
-                  onClick={() => setPage(x + 1)}
-                  className={`px-3 py-1 rounded ${
-                    page === x + 1
-                      ? "bg-blue-600 text-white"
-                      : "bg-slate-800 text-slate-400 hover:bg-slate-700"
-                  }`}
-                >
-                  {x + 1}
-                </button>
-              ))}
-            </nav>
-          </div>
-        )}
+        <Pagination
+          currentPage={page}
+          totalPages={pages}
+          totalItems={totalPayments}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          }}
+          itemName="payments"
+        />
       </div>
 
       {/* Reuse PaymentModal for editing, but we might need to tweak it to pre-fill data */}

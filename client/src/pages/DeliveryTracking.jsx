@@ -11,10 +11,11 @@ import {
   FileText,
 } from "lucide-react";
 import { useSelector } from "react-redux";
-import { formatCurrency } from "../utils/currency";
 import { formatDate } from "../utils/date";
 import toast from "react-hot-toast";
 import { useLocation } from "react-router-dom";
+import Pagination from "../components/Pagination";
+import useDebounce from "../utils/useDebounce";
 
 const DeliveryTracking = () => {
   const { user } = useSelector((state) => state.auth);
@@ -24,6 +25,13 @@ const DeliveryTracking = () => {
   // Queue State
   const [queue, setQueue] = useState([]);
   const [loadingQueue, setLoadingQueue] = useState(false);
+  const [queueSearch, setQueueSearch] = useState("");
+  const debouncedQueueSearch = useDebounce(queueSearch, 350);
+  const [queueStatusFilter, setQueueStatusFilter] = useState("all");
+  const [queuePage, setQueuePage] = useState(1);
+  const [queuePageSize, setQueuePageSize] = useState(15);
+  const [queueTotal, setQueueTotal] = useState(0);
+  const [queuePages, setQueuePages] = useState(1);
 
   // Search State
   const [searchQuery, setSearchQuery] = useState("");
@@ -40,10 +48,14 @@ const DeliveryTracking = () => {
   });
 
   useEffect(() => {
+    setQueuePage(1);
+  }, [debouncedQueueSearch, queueStatusFilter]);
+
+  useEffect(() => {
     if (activeTab === "queue") {
       fetchQueue();
     }
-  }, [activeTab]);
+  }, [activeTab, queuePage, queuePageSize, debouncedQueueSearch, queueStatusFilter]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -59,9 +71,25 @@ const DeliveryTracking = () => {
     try {
       setLoadingQueue(true);
       const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
+      const config = {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          page: queuePage,
+          limit: queuePageSize,
+          ...(debouncedQueueSearch ? { search: debouncedQueueSearch } : {}),
+          ...(queueStatusFilter !== "all" ? { status: queueStatusFilter } : {}),
+        },
+      };
       const res = await axios.get(ENDPOINTS.DELIVERY_QUEUE, config);
-      setQueue(res.data);
+      if (Array.isArray(res.data)) {
+        setQueue(res.data);
+        setQueueTotal(res.data.length);
+        setQueuePages(1);
+      } else {
+        setQueue(res.data.deliveries || res.data.data || []);
+        setQueueTotal(res.data.total ?? 0);
+        setQueuePages(res.data.pages ?? 1);
+      }
     } catch (error) {
       console.error("Error fetching queue:", error);
       toast.error("Failed to load delivery queue");
@@ -201,22 +229,20 @@ const DeliveryTracking = () => {
         <nav className="-mb-px flex space-x-8">
           <button
             onClick={() => setActiveTab("queue")}
-            className={`${
-              activeTab === "queue"
-                ? "border-blue-500 text-blue-500"
-                : "border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-700"
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+            className={`${activeTab === "queue"
+              ? "border-blue-500 text-blue-500"
+              : "border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-700"
+              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
           >
             <Clock className="w-4 h-4 mr-2" />
             Delivery Queue
           </button>
           <button
             onClick={() => setActiveTab("search")}
-            className={`${
-              activeTab === "search"
-                ? "border-blue-500 text-blue-500"
-                : "border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-700"
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+            className={`${activeTab === "search"
+              ? "border-blue-500 text-blue-500"
+              : "border-transparent text-slate-400 hover:text-slate-300 hover:border-slate-700"
+              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
           >
             <Search className="w-4 h-4 mr-2" />
             Search by Invoice
@@ -226,16 +252,48 @@ const DeliveryTracking = () => {
 
       {activeTab === "queue" && (
         <div className="bg-slate-900 shadow rounded-lg overflow-hidden border border-slate-800">
-          <div className="px-4 py-5 sm:px-6 flex justify-between items-center bg-slate-950 border-b border-slate-800">
-            <h3 className="text-lg leading-6 font-medium text-white">
-              Active Deliveries
-            </h3>
-            <button
-              onClick={fetchQueue}
-              className="text-sm text-blue-400 hover:text-blue-300 font-medium"
-            >
-              Refresh Queue
-            </button>
+          <div className="p-4 sm:px-6 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 bg-slate-950 border-b border-slate-800">
+            <div className="flex items-center space-x-3">
+              <h3 className="text-lg leading-6 font-medium text-white">
+                Active Deliveries
+              </h3>
+              {queueTotal > 0 && (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-900/60 text-blue-300 border border-blue-800">
+                  {queueTotal} total
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative min-w-[220px] flex-1 sm:flex-none">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search invoice, tracking, customer..."
+                  value={queueSearch}
+                  onChange={(e) => setQueueSearch(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-white rounded-md pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <select
+                value={queueStatusFilter}
+                onChange={(e) => setQueueStatusFilter(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="all">All Active Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="preparing">Preparing</option>
+                <option value="dispatched">Dispatched</option>
+              </select>
+
+              <button
+                onClick={fetchQueue}
+                className="text-sm text-blue-400 hover:text-blue-300 font-medium px-2 py-1.5 border border-slate-700 rounded-md bg-slate-900 hover:bg-slate-800 transition"
+              >
+                Refresh
+              </button>
+            </div>
           </div>
 
           {loadingQueue ? (
@@ -245,7 +303,7 @@ const DeliveryTracking = () => {
           ) : queue.length === 0 ? (
             <div className="p-10 text-center text-slate-400 flex flex-col items-center">
               <PackageCheck className="w-12 h-12 text-slate-600 mb-2" />
-              <p>No active deliveries in the queue.</p>
+              <p>No active deliveries found.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -305,7 +363,7 @@ const DeliveryTracking = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-400">
                         {delivery.trackingNumbers &&
-                        delivery.trackingNumbers.length > 0
+                          delivery.trackingNumbers.length > 0
                           ? delivery.trackingNumbers.join(", ")
                           : "-"}
                       </td>
@@ -321,6 +379,18 @@ const DeliveryTracking = () => {
                   ))}
                 </tbody>
               </table>
+
+              <Pagination
+                currentPage={queuePage}
+                totalPages={queuePages}
+                totalItems={queueTotal}
+                pageSize={queuePageSize}
+                onPageChange={setQueuePage}
+                onPageSizeChange={(newSize) => {
+                  setQueuePageSize(newSize);
+                  setQueuePage(1);
+                }}
+              />
             </div>
           )}
         </div>
@@ -418,7 +488,7 @@ const DeliveryTracking = () => {
                             <li key={eventIdx}>
                               <div className="relative pb-8">
                                 {eventIdx !==
-                                searchResult.lifecycle.length - 1 ? (
+                                  searchResult.lifecycle.length - 1 ? (
                                   <span
                                     className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-slate-800"
                                     aria-hidden="true"

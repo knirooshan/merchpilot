@@ -5,32 +5,64 @@ import { Plus, Edit, Trash, Search, Eye } from "lucide-react";
 import { useSelector } from "react-redux";
 import VendorForm from "../components/VendorForm";
 import VendorDetailModal from "../components/VendorDetailModal";
+import Pagination from "../components/Pagination";
+import { useDebounce } from "../utils/useDebounce";
 
 const Vendors = () => {
   const { user } = useSelector((state) => state.auth);
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebounce(searchTerm, 350);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalVendors, setTotalVendors] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [editingVendor, setEditingVendor] = useState(null);
   const [viewingVendorId, setViewingVendorId] = useState(null);
 
-  useEffect(() => {
-    fetchVendors();
-  }, []);
-
   const fetchVendors = async () => {
     try {
+      setLoading(true);
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.get(ENDPOINTS.VENDORS, config);
-      setVendors(data);
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize),
+      });
+      if (debouncedSearch && debouncedSearch.trim()) {
+        params.append("search", debouncedSearch.trim());
+      }
+
+      const { data } = await axios.get(
+        `${ENDPOINTS.VENDORS}?${params.toString()}`,
+        config,
+      );
+
+      if (Array.isArray(data)) {
+        setVendors(data);
+        setTotalVendors(data.length);
+        setTotalPages(Math.ceil(data.length / pageSize) || 1);
+      } else {
+        setVendors(data.vendors || data.data || []);
+        setTotalVendors(data.total || 0);
+        setTotalPages(data.pages || 1);
+      }
       setLoading(false);
     } catch (error) {
       console.error("Error fetching vendors:", error);
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
+  useEffect(() => {
+    fetchVendors();
+  }, [page, pageSize, debouncedSearch]);
 
   const handleAdd = () => {
     setEditingVendor(null);
@@ -48,7 +80,7 @@ const Vendors = () => {
         const token = user.token;
         const config = { headers: { Authorization: `Bearer ${token}` } };
         await axios.delete(ENDPOINTS.VENDOR_BY_ID(id), config);
-        setVendors(vendors.filter((v) => v._id !== id));
+        await fetchVendors();
       } catch (error) {
         console.error("Error deleting vendor:", error);
         alert("Error deleting vendor");
@@ -62,36 +94,28 @@ const Vendors = () => {
       const config = { headers: { Authorization: `Bearer ${token}` } };
 
       if (editingVendor) {
-        const { data } = await axios.put(
+        await axios.put(
           ENDPOINTS.VENDOR_BY_ID(editingVendor._id),
           vendorData,
           config,
         );
-        setVendors(
-          vendors.map((v) => (v._id === editingVendor._id ? data : v)),
-        );
       } else {
-        const { data } = await axios.post(
+        await axios.post(
           ENDPOINTS.VENDORS,
           vendorData,
           config,
         );
-        setVendors([...vendors, data]);
       }
       setShowForm(false);
+      await fetchVendors();
     } catch (error) {
       console.error("Error saving vendor:", error);
       alert("Error saving vendor");
     }
   };
 
-  const filteredVendors = vendors.filter(
-    (vendor) =>
-      vendor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      vendor.email?.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
-
-  if (loading) return <div className="text-white">Loading vendors...</div>;
+  if (loading && vendors.length === 0)
+    return <div className="text-white">Loading vendors...</div>;
 
   return (
     <div className="space-y-6">
@@ -142,7 +166,7 @@ const Vendors = () => {
               </tr>
             </thead>
             <tbody className="bg-slate-900 divide-y divide-slate-800">
-              {filteredVendors.map((vendor) => (
+              {vendors.map((vendor) => (
                 <tr key={vendor._id} className="hover:bg-slate-800/50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-white">
@@ -190,11 +214,23 @@ const Vendors = () => {
             </tbody>
           </table>
         </div>
-        {filteredVendors.length === 0 && (
+        {vendors.length === 0 && !loading && (
           <div className="p-6 text-center text-slate-500">
-            No vendors found. Add a new vendor to get started.
+            No vendors found. Try adjusting your search or add a new vendor.
           </div>
         )}
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={totalVendors}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setPage(1);
+          }}
+          itemName="vendors"
+        />
       </div>
 
       {showForm && (
