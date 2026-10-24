@@ -16,13 +16,19 @@ import CurrencySelector from "../components/CurrencySelector";
 import DateInput from "../components/DateInput";
 import RichTextEditor from "../components/RichTextEditor";
 import ItemModal from "../components/ItemModal";
+import SearchableSelect from "../components/SearchableSelect";
+import {
+  searchCustomersApi,
+  fetchCustomerByIdApi,
+  formatCustomerOption,
+} from "../utils/selectHelpers";
 
 const EditInvoice = () => {
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
   const navigate = useNavigate();
   const { id } = useParams();
-  const [customers, setCustomers] = useState([]);
+  const [selectedCustomerOpt, setSelectedCustomerOpt] = useState(null);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showReasonModal, setShowReasonModal] = useState(false);
@@ -55,17 +61,18 @@ const EditInvoice = () => {
       try {
         const token = user.token;
         const config = { headers: { Authorization: `Bearer ${token}` } };
-        const [custRes, prodRes, invoiceRes] = await Promise.all([
-          axios.get(ENDPOINTS.CUSTOMERS, config),
+        const [prodRes, invoiceRes] = await Promise.all([
           axios.get(ENDPOINTS.PRODUCTS, config),
           axios.get(ENDPOINTS.INVOICE_BY_ID(id), config),
         ]);
-        setCustomers(custRes.data);
         setProducts(prodRes.data);
 
         const invoice = invoiceRes.data;
+        if (invoice.customer) {
+          setSelectedCustomerOpt(formatCustomerOption(invoice.customer));
+        }
         setFormData({
-          customer: invoice.customer._id,
+          customer: invoice.customer?._id || invoice.customer || "",
           items: invoice.items.map((item) => ({
             product:
               typeof item.product === "object"
@@ -203,7 +210,8 @@ const EditInvoice = () => {
         customerData,
         config,
       );
-      setCustomers([...customers, data]);
+      const opt = formatCustomerOption(data);
+      setSelectedCustomerOpt(opt);
       setFormData({ ...formData, customer: data._id });
       setShowCustomerModal(false);
     } catch (error) {
@@ -230,24 +238,20 @@ const EditInvoice = () => {
                 Select Customer
               </label>
               <div className="flex gap-2">
-                <select
+                <SearchableSelect
                   value={formData.customer}
-                  onChange={(e) =>
-                    setFormData({ ...formData, customer: e.target.value })
-                  }
-                  className="block w-full bg-slate-950 border border-slate-700 text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  onChange={(val, opt) => {
+                    setFormData({ ...formData, customer: val });
+                    setSelectedCustomerOpt(opt);
+                  }}
+                  loadOptions={(q) => searchCustomersApi(user.token, q, 10)}
+                  fetchOptionById={(id) => fetchCustomerByIdApi(user.token, id)}
+                  selectedOption={selectedCustomerOpt}
+                  placeholder="Select a customer..."
+                  searchPlaceholder="Search customers by name, email, phone, company..."
                   required
-                >
-                  <option value="">Select a customer...</option>
-                  {customers.map((c) => (
-                    <option key={c._id} value={c._id}>
-                      {c.firstName || c.lastName
-                        ? `${c.firstName || ""} ${c.lastName || ""}`.trim()
-                        : c.billing?.company || "Unnamed"}{" "}
-                      ({c.email || "-"})
-                    </option>
-                  ))}
-                </select>
+                  className="flex-1"
+                />
                 <button
                   type="button"
                   onClick={() => setShowCustomerModal(true)}

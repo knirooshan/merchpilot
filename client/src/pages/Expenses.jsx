@@ -12,6 +12,12 @@ import DateInput from "../components/DateInput";
 import Pagination from "../components/Pagination";
 import { useDebounce } from "../utils/useDebounce";
 import { ENDPOINTS } from "../config/api";
+import SearchableSelect from "../components/SearchableSelect";
+import {
+  searchVendorsApi,
+  fetchVendorByIdApi,
+  formatVendorOption,
+} from "../utils/selectHelpers";
 
 const Expenses = () => {
   const { user } = useSelector((state) => state.auth);
@@ -50,11 +56,7 @@ const Expenses = () => {
   const [uploadFile, setUploadFile] = useState(null);
   const [uploading, setUploading] = useState(false);
 
-  const [vendors, setVendors] = useState([]);
-
-  useEffect(() => {
-    fetchVendors();
-  }, [user.token]);
+  const [selectedVendorOpt, setSelectedVendorOpt] = useState(null);
 
   useEffect(() => {
     setPage(1);
@@ -63,17 +65,6 @@ const Expenses = () => {
   useEffect(() => {
     fetchExpenses();
   }, [page, pageSize, debouncedSearch, filters, user.token]);
-
-  const fetchVendors = async () => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.get(ENDPOINTS.VENDORS, config);
-      setVendors(data);
-    } catch (error) {
-      console.error("Error fetching vendors:", error);
-    }
-  };
 
   const fetchExpenses = async () => {
     try {
@@ -222,7 +213,8 @@ const Expenses = () => {
       const token = user.token;
       const config = { headers: { Authorization: `Bearer ${token}` } };
       const { data } = await axios.post(ENDPOINTS.VENDORS, vendorData, config);
-      setVendors([...vendors, data]);
+      const opt = formatVendorOption(data);
+      setSelectedVendorOpt(opt);
       setFormData({ ...formData, vendor: data._id });
       setShowVendorModal(false);
     } catch (error) {
@@ -243,17 +235,21 @@ const Expenses = () => {
       notes: "",
       attachmentUrl: "",
     });
+    setSelectedVendorOpt(null);
     setUploadFile(null);
   };
 
   const handleEdit = (expense) => {
     setEditingExpense(expense);
+    setSelectedVendorOpt(
+      expense.vendor ? formatVendorOption(expense.vendor) : null
+    );
     setFormData({
       description: expense.description,
       amount: expense.amount,
       category: expense.category,
       date: expense.date.split("T")[0],
-      vendor: expense.vendor?._id || null,
+      vendor: expense.vendor?._id || "",
       paymentMethod: expense.paymentMethod || "Cash",
       reference: expense.reference || "",
       notes: expense.notes || "",
@@ -266,6 +262,7 @@ const Expenses = () => {
   const handleCancelEdit = () => {
     setShowForm(false);
     setEditingExpense(null);
+    setSelectedVendorOpt(null);
     resetForm();
   };
 
@@ -327,20 +324,19 @@ const Expenses = () => {
 
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-400">Vendor:</label>
-            <select
+            <SearchableSelect
               value={filters.vendor}
-              onChange={(e) =>
-                setFilters({ ...filters, vendor: e.target.value })
+              onChange={(val) =>
+                setFilters({ ...filters, vendor: val || "all" })
               }
-              className="bg-slate-950 border border-slate-700 text-white rounded px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
-            >
-              <option value="all">All Vendors</option>
-              {vendors.map((vendor) => (
-                <option key={vendor._id} value={vendor._id}>
-                  {vendor.name}
-                </option>
-              ))}
-            </select>
+              loadOptions={(q) => searchVendorsApi(user.token, q, 10)}
+              fixedOptions={[{ value: "all", label: "All Vendors" }]}
+              placeholder="All Vendors"
+              searchPlaceholder="Search vendors..."
+              isClearable={false}
+              className="w-48"
+              buttonClassName="py-1 px-3 text-sm h-8"
+            />
           </div>
 
           <div className="flex items-center gap-2">
@@ -470,24 +466,29 @@ const Expenses = () => {
                     Vendor
                   </label>
                   <div className="flex gap-2">
-                    <select
+                    <SearchableSelect
                       value={formData.vendor}
-                      onChange={(e) =>
-                        setFormData({ ...formData, vendor: e.target.value })
+                      onChange={(val, opt) => {
+                        setFormData({ ...formData, vendor: val });
+                        setSelectedVendorOpt(opt);
+                      }}
+                      loadOptions={(q) => searchVendorsApi(user.token, q, 10)}
+                      fetchOptionById={(id) => fetchVendorByIdApi(user.token, id)}
+                      selectedOption={selectedVendorOpt}
+                      initialLabel={
+                        editingExpense?.vendor?.name ||
+                        selectedVendorOpt?.label ||
+                        ""
                       }
-                      className="w-full bg-slate-950 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                    >
-                      <option value="">Select Vendor</option>
-                      {vendors.map((vendor) => (
-                        <option key={vendor._id} value={vendor._id}>
-                          {vendor.name}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Select Vendor"
+                      searchPlaceholder="Search vendors by name, email, phone..."
+                      isClearable
+                      className="flex-1"
+                    />
                     <button
                       type="button"
                       onClick={() => setShowVendorModal(true)}
-                      className="bg-slate-800 hover:bg-slate-700 text-white rounded px-3 border border-slate-700"
+                      className="bg-slate-800 hover:bg-slate-700 text-white rounded px-3 border border-slate-700 shrink-0"
                       title="Add New Vendor"
                     >
                       <Plus className="h-5 w-5" />

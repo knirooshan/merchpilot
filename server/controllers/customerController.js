@@ -28,7 +28,8 @@ const getCustomers = async (req, res) => {
 
     // Search in name, email, phone, company, address
     if (search && search.trim()) {
-      const searchRegex = { $regex: search.trim(), $options: "i" };
+      const safeSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const searchRegex = { $regex: safeSearch, $options: "i" };
       filter.$or = [
         { firstName: searchRegex },
         { lastName: searchRegex },

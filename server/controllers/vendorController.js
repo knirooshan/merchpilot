@@ -25,7 +25,8 @@ const getVendors = async (req, res) => {
     const filter = {};
 
     if (search && search.trim()) {
-      const searchRegex = { $regex: search.trim(), $options: "i" };
+      const safeSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const searchRegex = { $regex: safeSearch, $options: "i" };
       filter.$or = [
         { name: searchRegex },
         { email: searchRegex },
@@ -166,10 +167,27 @@ const getVendorSummary = async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
+}
+
+// @desc    Get single vendor
+// @route   GET /api/vendors/:id
+// @access  Private
+const getVendorById = async (req, res) => {
+  try {
+    const { Vendor } = getTenantModels(req.dbConnection);
+    const vendor = await Vendor.findById(req.params.id);
+    if (!vendor) {
+      return res.status(404).json({ message: "Vendor not found" });
+    }
+    res.json(vendor);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
 module.exports = {
   getVendors,
+  getVendorById,
   createVendor,
   updateVendor,
   deleteVendor,

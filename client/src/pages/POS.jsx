@@ -5,14 +5,23 @@ import { useSelector } from "react-redux";
 import POSProductGrid from "../components/POSProductGrid";
 import POSCart from "../components/POSCart";
 import CustomerForm from "../components/CustomerForm";
+import {
+  searchCustomersApi,
+  fetchCustomerByIdApi,
+  formatCustomerOption,
+} from "../utils/selectHelpers";
 
 const POS = () => {
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
   const [products, setProducts] = useState([]);
-  const [customers, setCustomers] = useState([]);
+  const [selectedCustomerOpt, setSelectedCustomerOpt] = useState({
+    value: "0000-0000-0001",
+    label: "Walk-in Customer",
+    subtext: "Default counter customer",
+  });
   const [cart, setCart] = useState([]);
-  const [selectedCustomer, setSelectedCustomer] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState("0000-0000-0001");
   const [discount, setDiscount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -23,12 +32,8 @@ const POS = () => {
       try {
         const token = user.token;
         const config = { headers: { Authorization: `Bearer ${token}` } };
-        const [prodRes, custRes] = await Promise.all([
-          axios.get(ENDPOINTS.PRODUCTS, config),
-          axios.get(ENDPOINTS.CUSTOMERS, config),
-        ]);
+        const prodRes = await axios.get(ENDPOINTS.PRODUCTS, config);
         setProducts(prodRes.data);
-        setCustomers(custRes.data);
         setLoading(false);
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -94,7 +99,7 @@ const POS = () => {
         !selectedCustomer || selectedCustomer === "0000-0000-0001";
       const customerId = isWalkIn ? "walk-in" : selectedCustomer;
       const selectedCustomerData = !isWalkIn
-        ? customers.find((c) => c._id === customerId)
+        ? selectedCustomerOpt?.customer || null
         : null;
 
       const orderData = {
@@ -167,6 +172,11 @@ const POS = () => {
       setCart([]);
       setDiscount(0);
       setSelectedCustomer("0000-0000-0001");
+      setSelectedCustomerOpt({
+        value: "0000-0000-0001",
+        label: "Walk-in Customer",
+        subtext: "Default counter customer",
+      });
     } catch (error) {
       console.error("Error processing checkout:", error);
       alert("Error processing checkout");
@@ -182,7 +192,8 @@ const POS = () => {
         customerData,
         config
       );
-      setCustomers([...customers, data]);
+      const opt = formatCustomerOption(data);
+      setSelectedCustomerOpt(opt);
       setSelectedCustomer(data._id);
       setShowCustomerModal(false);
     } catch (error) {
@@ -208,9 +219,14 @@ const POS = () => {
           onRemoveFromCart={removeFromCart}
           onUpdateQuantity={updateQuantity}
           onCheckout={handleCheckout}
-          customers={customers}
           selectedCustomer={selectedCustomer}
-          onSelectCustomer={setSelectedCustomer}
+          selectedCustomerOpt={selectedCustomerOpt}
+          loadCustomerOptions={(q) => searchCustomersApi(user.token, q, 10)}
+          fetchCustomerById={(id) => fetchCustomerByIdApi(user.token, id)}
+          onSelectCustomer={(val, opt) => {
+            setSelectedCustomer(val);
+            if (opt) setSelectedCustomerOpt(opt);
+          }}
           onAddCustomer={() => setShowCustomerModal(true)}
           total={total}
           subtotal={subtotal}
