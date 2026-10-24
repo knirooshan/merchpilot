@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import {
   Search,
@@ -18,25 +19,21 @@ import Pagination from "../components/Pagination";
 import useDebounce from "../utils/useDebounce";
 
 const DeliveryTracking = () => {
+  const queryClient = useQueryClient();
   const { user } = useSelector((state) => state.auth);
   const location = useLocation();
   const [activeTab, setActiveTab] = useState("queue"); // "queue" or "search"
 
   // Queue State
-  const [queue, setQueue] = useState([]);
-  const [loadingQueue, setLoadingQueue] = useState(false);
   const [queueSearch, setQueueSearch] = useState("");
   const debouncedQueueSearch = useDebounce(queueSearch, 350);
   const [queueStatusFilter, setQueueStatusFilter] = useState("all");
   const [queuePage, setQueuePage] = useState(1);
   const [queuePageSize, setQueuePageSize] = useState(15);
-  const [queueTotal, setQueueTotal] = useState(0);
-  const [queuePages, setQueuePages] = useState(1);
 
   // Search State
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResult, setSearchResult] = useState(null);
-  const [loadingSearch, setLoadingSearch] = useState(false);
+  const [submittedSearch, setSubmittedSearch] = useState("");
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -52,82 +49,88 @@ const DeliveryTracking = () => {
   }, [debouncedQueueSearch, queueStatusFilter]);
 
   useEffect(() => {
-    if (activeTab === "queue") {
-      fetchQueue();
-    }
-  }, [activeTab, queuePage, queuePageSize, debouncedQueueSearch, queueStatusFilter]);
-
-  useEffect(() => {
     const params = new URLSearchParams(location.search);
     const invoiceParam = params.get("invoice");
     if (invoiceParam) {
       setActiveTab("search");
       setSearchQuery(invoiceParam);
-      executeSearch(invoiceParam);
+      setSubmittedSearch(invoiceParam.trim());
     }
   }, [location.search]);
 
-  const fetchQueue = async () => {
-    try {
-      setLoadingQueue(true);
-      const token = user.token;
-      const config = {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
-          page: queuePage,
-          limit: queuePageSize,
-          ...(debouncedQueueSearch ? { search: debouncedQueueSearch } : {}),
-          ...(queueStatusFilter !== "all" ? { status: queueStatusFilter } : {}),
-        },
-      };
-      const res = await axios.get(ENDPOINTS.DELIVERY_QUEUE, config);
-      if (Array.isArray(res.data)) {
-        setQueue(res.data);
-        setQueueTotal(res.data.length);
-        setQueuePages(1);
-      } else {
-        setQueue(res.data.data || []);
-        setQueueTotal(res.data.total ?? 0);
-        setQueuePages(res.data.pages ?? 1);
+  const queueParams = {
+    page: queuePage,
+    limit: queuePageSize,
+    ...(debouncedQueueSearch ? { search: debouncedQueueSearch } : {}),
+    ...(queueStatusFilter !== "all" ? { status: queueStatusFilter } : {}),
+  };
+
+  const {
+    data: queueData,
+    isLoading: loadingQueue,
+    isFetching: isFetchingQueue,
+    refetch: refetchQueue,
+  } = useQuery({
+    queryKey: ["deliveryQueue", queueParams],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.DELIVERY_QUEUE, {
+        params: queueParams,
+      });
+      return res.data;
+    },
+    enabled: activeTab === "queue",
+    placeholderData: (previousData) => previousData,
+  });
+
+  const queue = Array.isArray(queueData) ? queueData : queueData?.data || [];
+  const queueTotal = Array.isArray(queueData)
+    ? queueData.length
+    : (queueData?.total ?? 0);
+  const queuePages = Array.isArray(queueData)
+    ? 1
+    : (queueData?.pages ?? 1);
+
+  const {
+    data: searchResult,
+    isLoading: loadingSearch,
+  } = useQuery({
+    queryKey: ["deliverySearch", submittedSearch],
+    queryFn: async () => {
+      try {
+        const res = await apiClient.get(ENDPOINTS.DELIVERY_SEARCH(submittedSearch));
+        return res.data;
+      } catch (error) {
+        toast.error(error.response?.data?.message || "Invoice not found");
+        return null;
       }
-    } catch (error) {
-      console.error("Error fetching queue:", error);
-      toast.error("Failed to load delivery queue");
-    } finally {
-      setLoadingQueue(false);
-    }
-  };
+    },
+    enabled: activeTab === "search" && !!submittedSearch,
+  });
 
-  const handleSearch = async (e) => {
+  const updateMutation = useMutation({
+    mutationFn: async ({ invoiceId, payload }) => {
+      return apiClient.put(ENDPOINTS.DELIVERY_UPDATE(invoiceId), payload);
+    },
+    onSuccess: () => {
+      toast.success("Delivery status updated successfully");
+      setIsModalOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["deliveryQueue"] });
+      queryClient.invalidateQueries({ queryKey: ["deliverySearch"] });
+    },
+    onError: (error) => {
+      console.error("Error updating delivery:", error);
+      toast.error(error.response?.data?.message || "Failed to update delivery");
+    },
+  });
+
+  const handleSearch = (e) => {
     e.preventDefault();
-    executeSearch(searchQuery);
-  };
-
-  const executeSearch = async (query) => {
-    if (!query || !query.trim()) return;
-
-    try {
-      setLoadingSearch(true);
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const res = await axios.get(
-        ENDPOINTS.DELIVERY_SEARCH(query.trim()),
-        config,
-      );
-      setSearchResult(res.data);
-    } catch (error) {
-      console.error("Error searching delivery:", error);
-      toast.error(error.response?.data?.message || "Invoice not found");
-      setSearchResult(null);
-    } finally {
-      setLoadingSearch(false);
-    }
+    if (!searchQuery || !searchQuery.trim()) return;
+    setSubmittedSearch(searchQuery.trim());
   };
 
   const openUpdateModal = (deliveryOrInvoice) => {
-    // Determine if it's from search (might only have invoice details if pending) or queue
     const isFromSearch = activeTab === "search";
-
     let currentStatus = "pending";
     let currentTracking = "";
 
@@ -149,46 +152,22 @@ const DeliveryTracking = () => {
     setIsModalOpen(true);
   };
 
-  const handleUpdate = async (e) => {
+  const handleUpdate = (e) => {
     e.preventDefault();
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
+    const invoiceId = selectedDelivery?.invoice?._id;
+    if (!invoiceId) return;
 
-      const invoiceId =
-        activeTab === "search"
-          ? selectedDelivery.invoice._id
-          : selectedDelivery.invoice._id;
+    const payload = {
+      status: formData.status,
+      trackingNumbers: formData.trackingNumbers
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t),
+      note: formData.note,
+      updatedBy: user?.name,
+    };
 
-      const payload = {
-        status: formData.status,
-        trackingNumbers: formData.trackingNumbers
-          .split(",")
-          .map((t) => t.trim())
-          .filter((t) => t),
-        note: formData.note,
-        updatedBy: user.name,
-      };
-
-      await axios.put(ENDPOINTS.DELIVERY_UPDATE(invoiceId), payload, config);
-
-      toast.success("Delivery status updated successfully");
-      setIsModalOpen(false);
-
-      if (activeTab === "queue") {
-        fetchQueue();
-      } else if (activeTab === "search") {
-        // Re-run search to get updated data
-        const res = await axios.get(
-          ENDPOINTS.DELIVERY_SEARCH(selectedDelivery.invoice.invoiceNumber),
-          config,
-        );
-        setSearchResult(res.data);
-      }
-    } catch (error) {
-      console.error("Error updating delivery:", error);
-      toast.error("Failed to update delivery");
-    }
+    updateMutation.mutate({ invoiceId, payload });
   };
 
   const getStatusColor = (status) => {
@@ -288,10 +267,11 @@ const DeliveryTracking = () => {
               </select>
 
               <button
-                onClick={fetchQueue}
-                className="text-sm text-blue-400 hover:text-blue-300 font-medium px-2 py-1.5 border border-slate-700 rounded-md bg-slate-900 hover:bg-slate-800 transition"
+                onClick={() => refetchQueue()}
+                disabled={isFetchingQueue}
+                className="text-sm text-blue-400 hover:text-blue-300 font-medium px-2 py-1.5 border border-slate-700 rounded-md bg-slate-900 hover:bg-slate-800 transition disabled:opacity-50"
               >
-                Refresh
+                {isFetchingQueue ? "Refreshing..." : "Refresh"}
               </button>
             </div>
           </div>
@@ -627,9 +607,10 @@ const DeliveryTracking = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  disabled={updateMutation.isPending}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50"
                 >
-                  Save Changes
+                  {updateMutation.isPending ? "Saving..." : "Save Changes"}
                 </button>
               </div>
             </form>

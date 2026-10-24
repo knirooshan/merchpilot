@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
-import axios from "axios";
+import { useQuery } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import {
   DollarSign,
@@ -30,116 +31,78 @@ const PERIOD_LABELS = {
 };
 
 const Dashboard = () => {
-  const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
-  const [stats, setStats] = useState(null);
-  const [chartData, setChartData] = useState([]);
-  const [activities, setActivities] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [period, setPeriod] = useState("month");
-  // Track whether the initial activities fetch has completed.
-  // This ref persists across re-renders without causing extra renders.
-  const activitiesFetchedRef = useRef(false);
-  // Holds the AbortController for the current in-flight request so stale
-  // responses (e.g. from React StrictMode double-invocation) never overwrite
-  // data for a newer period.
-  const abortRef = useRef(null);
 
-  const fetchDashboardData = async (activePeriod) => {
-    // Abort any previous in-flight request before starting a new one
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+  const {
+    data: statsRaw,
+    isLoading: statsLoading,
+    isFetching: statsFetching,
+  } = useQuery({
+    queryKey: ["dashboardStats", period],
+    queryFn: async ({ signal }) => {
+      const res = await apiClient.get(ENDPOINTS.DASHBOARD_STATS, {
+        params: { period },
+        signal,
+      });
+      return res.data;
+    },
+    placeholderData: (previousData) => previousData,
+  });
 
-    // First-ever fetch: show the full-page loader and load activity logs too
-    const isInitial = !activitiesFetchedRef.current;
+  const { data: chartData = [] } = useQuery({
+    queryKey: ["dashboardChart", period],
+    queryFn: async ({ signal }) => {
+      const res = await apiClient.get(ENDPOINTS.DASHBOARD_CHART, {
+        params: { period },
+        signal,
+      });
+      return res.data || [];
+    },
+    placeholderData: (previousData) => previousData,
+  });
 
-    try {
-      const token = user.token;
-      const config = {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: controller.signal,
-      };
+  const { data: activities = [] } = useQuery({
+    queryKey: ["dashboardActivities"],
+    queryFn: async ({ signal }) => {
+      const res = await apiClient.get(ENDPOINTS.DASHBOARD_ACTIVITIES, {
+        signal,
+      });
+      return res.data || [];
+    },
+    staleTime: 1000 * 60 * 5,
+  });
 
-      if (isInitial) setLoading(true);
-      else setRefreshing(true);
+  const loading = statsLoading && !statsRaw;
+  const refreshing = statsFetching && !statsLoading;
 
-      const requests = [
-        axios.get(
-          `${ENDPOINTS.DASHBOARD_STATS}?period=${activePeriod}`,
-          config,
-        ),
-        axios.get(
-          `${ENDPOINTS.DASHBOARD_CHART}?period=${activePeriod}`,
-          config,
-        ),
-      ];
-      if (isInitial) {
-        requests.push(axios.get(ENDPOINTS.DASHBOARD_ACTIVITIES, config));
-      }
-
-      const results = await Promise.all(requests);
-
-      // If this request was superseded, discard the response
-      if (controller.signal.aborted) return;
-
-      const raw = results[0].data;
-      let normalizedStats;
-      if (raw && "periodSales" in raw) {
-        normalizedStats = raw;
-      } else if (raw) {
-        const isMonth = activePeriod === "month";
-        normalizedStats = {
-          periodSales: isMonth
-            ? (raw.monthlySales ?? 0)
-            : (raw.totalSales ?? 0),
-          periodOrders: raw.totalOrders ?? 0,
-          periodExpenses: isMonth
-            ? (raw.monthlyExpenses ?? 0)
-            : (raw.totalExpenses ?? 0),
-          periodNetProfit: isMonth
-            ? (raw.monthlyNetProfit ?? 0)
-            : (raw.netProfit ?? 0),
-          totalCustomers: raw.totalCustomers ?? 0,
-          totalProducts: raw.totalProducts ?? 0,
-        };
-      }
-
-      setStats(normalizedStats);
-      setChartData(results[1].data);
-      if (isInitial) {
-        setActivities(results[2].data);
-        activitiesFetchedRef.current = true;
-      }
-    } catch (error) {
-      // Ignore intentional cancellations; log real errors
-      if (axios.isCancel(error) || error.name === "CanceledError") return;
-      console.error("Error fetching dashboard data:", error);
-    } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    }
-  };
-
-  // Re-fetch whenever the period changes; also handles the initial mount load.
-  // activitiesFetchedRef ensures activity logs are only fetched once.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    fetchDashboardData(period);
-    return () => {
-      if (abortRef.current) abortRef.current.abort();
+  const stats = useMemo(() => {
+    if (!statsRaw) return null;
+    if ("periodSales" in statsRaw) return statsRaw;
+    const isMonth = period === "month";
+    return {
+      periodSales: isMonth
+        ? (statsRaw.monthlySales ?? 0)
+        : (statsRaw.totalSales ?? 0),
+      periodOrders: statsRaw.totalOrders ?? 0,
+      periodExpenses: isMonth
+        ? (statsRaw.monthlyExpenses ?? 0)
+        : (statsRaw.totalExpenses ?? 0),
+      periodNetProfit: isMonth
+        ? (statsRaw.monthlyNetProfit ?? 0)
+        : (statsRaw.netProfit ?? 0),
+      totalCustomers: statsRaw.totalCustomers ?? 0,
+      totalProducts: statsRaw.totalProducts ?? 0,
+      totalOutstanding: statsRaw.totalOutstanding ?? 0,
     };
-  }, [period]);
+  }, [statsRaw, period]);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading dashboard...</p>
+          <p className="mt-4 text-gray-400">Loading dashboard...</p>
         </div>
       </div>
     );
@@ -156,11 +119,10 @@ const Dashboard = () => {
             <button
               key={opt.value}
               onClick={() => setPeriod(opt.value)}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                period === opt.value
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${period === opt.value
                   ? "bg-blue-600 text-white"
                   : "text-slate-400 hover:text-white"
-              }`}
+                }`}
             >
               {opt.label}
             </button>
@@ -250,11 +212,10 @@ const Dashboard = () => {
                 Net Profit ({periodLabel})
               </span>
               <span
-                className={`font-bold text-lg ${
-                  (stats?.periodNetProfit || 0) >= 0
+                className={`font-bold text-lg ${(stats?.periodNetProfit || 0) >= 0
                     ? "text-green-500"
                     : "text-red-500"
-                }`}
+                  }`}
               >
                 {formatCurrency(stats?.periodNetProfit || 0, settings)}
               </span>

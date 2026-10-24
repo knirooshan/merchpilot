@@ -1,40 +1,42 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
+import { useMutation } from "@tanstack/react-query";
 import { setUser } from "../store/slices/authSlice";
 import { fetchSettings } from "../store/slices/settingsSlice";
 import { ENDPOINTS } from "../config/api";
-import axios from "axios";
+import apiClient from "../api/apiClient";
 import { Lock, Mail } from "lucide-react";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-
-    try {
-      const { data } = await axios.post(ENDPOINTS.AUTH_LOGIN, {
-        email,
-        password,
-      });
-
+  const loginMutation = useMutation({
+    mutationFn: async (credentials) => {
+      const { data } = await apiClient.post(ENDPOINTS.AUTH_LOGIN, credentials);
+      return data;
+    },
+    onSuccess: async (data) => {
       dispatch(setUser(data));
       await dispatch(fetchSettings());
       navigate("/");
-    } catch (err) {
+    },
+    onError: (err) => {
       setError(err.response?.data?.message || "Invalid email or password");
-    } finally {
-      setLoading(false);
-    }
+    },
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError("");
+    loginMutation.mutate({ email, password });
   };
+
+  const loading = loginMutation.isPending;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950">

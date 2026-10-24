@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { toast } from "react-hot-toast";
 import { Plus, Key, Power, Trash, Mail, Copy } from "lucide-react";
@@ -8,15 +9,12 @@ import SearchBar from "../components/SearchBar";
 import useDebounce from "../utils/useDebounce";
 
 const Tenants = () => {
-  const [tenants, setTenants] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 350);
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalTenants, setTotalTenants] = useState(0);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [passkeyModal, setPasskeyModal] = useState(null);
@@ -30,106 +28,140 @@ const Tenants = () => {
     setPage(1);
   }, [debouncedSearchTerm, statusFilter]);
 
-  useEffect(() => {
-    fetchTenants();
-  }, [page, pageSize, debouncedSearchTerm, statusFilter]);
-
-  const fetchTenants = async () => {
-    try {
-      setLoading(true);
-      const params = {
-        page,
-        limit: pageSize,
-        ...(debouncedSearchTerm ? { search: debouncedSearchTerm } : {}),
-        ...(statusFilter !== "all" ? { status: statusFilter } : {}),
-      };
-      const { data } = await axios.get(ENDPOINTS.TENANTS, { params });
-      if (Array.isArray(data)) {
-        setTenants(data);
-        setTotalTenants(data.length);
-        setTotalPages(1);
-      } else {
-        setTenants(data.data || []);
-        setTotalTenants(data.total ?? 0);
-        setTotalPages(data.pages ?? 1);
-      }
-    } catch (error) {
-      console.error("Error fetching tenants:", error);
-      toast.error("Failed to load tenants");
-    } finally {
-      setLoading(false);
-    }
+  const queryParams = {
+    page,
+    limit: pageSize,
+    ...(debouncedSearchTerm ? { search: debouncedSearchTerm } : {}),
+    ...(statusFilter !== "all" ? { status: statusFilter } : {}),
   };
 
-  const handleCreate = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post(ENDPOINTS.TENANTS, formData);
+  const {
+    data: queryResult,
+    isLoading: loading,
+    isFetching,
+  } = useQuery({
+    queryKey: ["tenants", queryParams],
+    queryFn: async () => {
+      const { data } = await apiClient.get(ENDPOINTS.TENANTS, { params: queryParams });
+      return data;
+    },
+    placeholderData: (previousData) => previousData,
+  });
+
+  const tenants = Array.isArray(queryResult)
+    ? queryResult
+    : queryResult?.data || [];
+  const totalTenants = Array.isArray(queryResult)
+    ? queryResult.length
+    : (queryResult?.total ?? 0);
+  const totalPages = Array.isArray(queryResult)
+    ? 1
+    : (queryResult?.pages ?? 1);
+
+  const createTenantMutation = useMutation({
+    mutationFn: async (data) => {
+      return apiClient.post(ENDPOINTS.TENANTS, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
       toast.success("Tenant created successfully");
       setFormData({ name: "", subdomain: "", email: "" });
       setModalOpen(false);
-      fetchTenants();
-    } catch (error) {
+    },
+    onError: (error) => {
       toast.error(error.response?.data?.message || "Failed to create tenant");
-    }
-  };
+    },
+  });
 
-  const generatePasskey = async (tenant) => {
-    if (
-      !window.confirm("Generate new passkey? This will invalidate the old one.")
-    )
-      return;
-    try {
-      const { data } = await axios.post(ENDPOINTS.TENANT_PASSKEY(tenant._id));
-      // toast.success(`New Passkey: ${data.setupPasskey}`, { duration: 10000 });
+  const generatePasskeyMutation = useMutation({
+    mutationFn: async (tenant) => {
+      const { data } = await apiClient.post(ENDPOINTS.TENANT_PASSKEY(tenant._id));
+      return { data, tenant };
+    },
+    onSuccess: ({ data, tenant }) => {
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
       setPasskeyModal({
         passkey: data.setupPasskey,
         tenant,
       });
-      fetchTenants();
-    } catch {
+    },
+    onError: () => {
       toast.error("Failed to generate passkey");
-    }
-  };
+    },
+  });
 
-  const toggleStatus = async (tenant) => {
-    try {
-      await axios.put(ENDPOINTS.TENANT_BY_ID(tenant._id), {
+  const toggleStatusMutation = useMutation({
+    mutationFn: async (tenant) => {
+      await apiClient.put(ENDPOINTS.TENANT_BY_ID(tenant._id), {
         isActive: !tenant.isActive,
       });
+      return tenant;
+    },
+    onSuccess: (tenant) => {
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
       toast.success(`Tenant ${tenant.isActive ? "disabled" : "enabled"}`);
-      fetchTenants();
-    } catch {
+    },
+    onError: () => {
       toast.error("Failed to update status");
-    }
-  };
+    },
+  });
 
-  const handleResendEmail = async (id) => {
-    try {
-      if (!window.confirm("Resend the welcome email to this tenant?")) return;
-
-      const { data } = await axios.post(ENDPOINTS.TENANT_RESEND_WELCOME(id));
+  const resendEmailMutation = useMutation({
+    mutationFn: async (id) => {
+      const { data } = await apiClient.post(ENDPOINTS.TENANT_RESEND_WELCOME(id));
+      return data;
+    },
+    onSuccess: (data) => {
       toast.success(data.message || "Email sent successfully");
-    } catch (error) {
+    },
+    onError: (error) => {
       toast.error(error.response?.data?.message || "Failed to send email");
-    }
+    },
+  });
+
+  const deleteTenantMutation = useMutation({
+    mutationFn: async (id) => {
+      return apiClient.delete(ENDPOINTS.TENANT_BY_ID(id));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      toast.success("Tenant deleted successfully");
+    },
+    onError: () => {
+      toast.error("Failed to delete tenant");
+    },
+  });
+
+  const handleCreate = (e) => {
+    e.preventDefault();
+    createTenantMutation.mutate(formData);
   };
 
-  const handleDeleteTenant = async (id) => {
+  const generatePasskey = (tenant) => {
+    if (
+      !window.confirm("Generate new passkey? This will invalidate the old one.")
+    )
+      return;
+    generatePasskeyMutation.mutate(tenant);
+  };
+
+  const toggleStatus = (tenant) => {
+    toggleStatusMutation.mutate(tenant);
+  };
+
+  const handleResendEmail = (id) => {
+    if (!window.confirm("Resend the welcome email to this tenant?")) return;
+    resendEmailMutation.mutate(id);
+  };
+
+  const handleDeleteTenant = (id) => {
     if (
       !window.confirm(
         "Are you sure you want to delete this tenant? This action cannot be undone."
       )
     )
       return;
-
-    try {
-      await axios.delete(ENDPOINTS.TENANT_BY_ID(id));
-      toast.success("Tenant deleted successfully");
-      fetchTenants();
-    } catch {
-      toast.error("Failed to delete tenant");
-    }
+    deleteTenantMutation.mutate(id);
   };
 
   return (
@@ -171,6 +203,11 @@ const Tenants = () => {
             <option value="active">Active Only</option>
             <option value="inactive">Inactive Only</option>
           </select>
+          {isFetching && !loading && (
+            <span className="text-xs text-blue-400 animate-pulse bg-blue-500/10 px-2 py-1 rounded">
+              Updating...
+            </span>
+          )}
           {totalTenants > 0 && (
             <span className="text-xs text-slate-400 bg-slate-800 px-2.5 py-1.5 rounded-md border border-slate-700">
               {totalTenants} {totalTenants === 1 ? "tenant" : "tenants"}

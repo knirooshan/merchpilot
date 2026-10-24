@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { Plus, Edit, Trash2, Eye } from "lucide-react";
+import toast from "react-hot-toast";
 import CustomerForm from "../components/CustomerForm";
 import CustomerDetailModal from "../components/CustomerDetailModal";
 import SearchBar from "../components/SearchBar";
@@ -11,8 +13,8 @@ import { useDebounce } from "../utils/useDebounce";
 
 const Customers = () => {
   const { user } = useSelector((state) => state.auth);
-  const [customers, setCustomers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+
   const [showModal, setShowModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [viewingCustomerId, setViewingCustomerId] = useState(null);
@@ -20,51 +22,81 @@ const Customers = () => {
   const debouncedSearch = useDebounce(search, 350);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalCustomers, setTotalCustomers] = useState(0);
-
-  const fetchCustomers = async () => {
-    try {
-      setLoading(true);
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(pageSize),
-      });
-      if (debouncedSearch && debouncedSearch.trim()) {
-        params.append("search", debouncedSearch.trim());
-      }
-
-      const { data } = await axios.get(
-        `${ENDPOINTS.CUSTOMERS}?${params.toString()}`,
-        config,
-      );
-
-      if (Array.isArray(data)) {
-        setCustomers(data);
-        setTotalCustomers(data.length);
-        setTotalPages(Math.ceil(data.length / pageSize) || 1);
-      } else {
-        setCustomers(data.data || []);
-        setTotalCustomers(data.total || 0);
-        setTotalPages(data.pages || 1);
-      }
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching customers:", error);
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch]);
 
-  useEffect(() => {
-    fetchCustomers();
-  }, [page, pageSize, debouncedSearch]);
+  const queryParams = {
+    page,
+    limit: pageSize,
+    ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+  };
+
+  const {
+    data: customersData,
+    isLoading,
+    isFetching,
+    error,
+  } = useQuery({
+    queryKey: ["customers", queryParams],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.CUSTOMERS, {
+        params: queryParams,
+      });
+      return res.data;
+    },
+    placeholderData: (previousData) => previousData,
+  });
+
+  const customers = Array.isArray(customersData)
+    ? customersData
+    : customersData?.data || [];
+  const totalCustomers = Array.isArray(customersData)
+    ? customersData.length
+    : customersData?.total || 0;
+  const totalPages = Array.isArray(customersData)
+    ? Math.ceil(customersData.length / pageSize) || 1
+    : customersData?.pages || 1;
+
+  const saveMutation = useMutation({
+    mutationFn: async (formData) => {
+      if (editingCustomer) {
+        return apiClient.put(
+          ENDPOINTS.CUSTOMER_BY_ID(editingCustomer._id),
+          formData,
+        );
+      }
+      return apiClient.post(ENDPOINTS.CUSTOMERS, formData);
+    },
+    onSuccess: () => {
+      toast.success(
+        editingCustomer
+          ? "Customer updated successfully"
+          : "Customer created successfully",
+      );
+      closeModal();
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+    },
+    onError: (err) => {
+      console.error("Error saving customer:", err);
+      toast.error(err.response?.data?.message || "Error saving customer");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id) => {
+      await apiClient.delete(ENDPOINTS.CUSTOMER_BY_ID(id));
+    },
+    onSuccess: () => {
+      toast.success("Customer deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+    },
+    onError: (err) => {
+      console.error("Error deleting customer:", err);
+      toast.error(err.response?.data?.message || "Error deleting customer");
+    },
+  });
 
   const openModal = (customer = null) => {
     setEditingCustomer(customer);
@@ -76,53 +108,40 @@ const Customers = () => {
     setEditingCustomer(null);
   };
 
-  const handleSaveCustomer = async (formData) => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
+  const handleSaveCustomer = (formData) => {
+    saveMutation.mutate(formData);
+  };
 
-      if (editingCustomer) {
-        // Update
-        await axios.put(
-          ENDPOINTS.CUSTOMER_BY_ID(editingCustomer._id),
-          formData,
-          config,
-        );
-      } else {
-        // Create
-        await axios.post(ENDPOINTS.CUSTOMERS, formData, config);
-      }
-
-      closeModal();
-      fetchCustomers();
-    } catch (error) {
-      console.error("Error saving customer:", error);
-      alert(error.response?.data?.message || "Error saving customer");
+  const handleDelete = (id) => {
+    if (window.confirm("Are you sure you want to delete this customer?")) {
+      deleteMutation.mutate(id);
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this customer?")) {
-      return;
-    }
+  if (isLoading) return <div className="text-white">Loading customers...</div>;
 
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.delete(ENDPOINTS.CUSTOMER_BY_ID(id), config);
-      fetchCustomers();
-    } catch (error) {
-      console.error("Error deleting customer:", error);
-      alert("Error deleting customer");
-    }
-  };
-
-  if (loading) return <div className="text-white">Loading customers...</div>;
+  if (error && !customersData) {
+    return (
+      <div className="p-6 bg-red-900/20 border border-red-800 text-red-400 rounded-lg">
+        <p className="font-semibold">Failed to load customers</p>
+        <p className="text-sm mt-1">
+          {error.response?.data?.message || error.message}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-white">Customers</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white">Customers</h1>
+          {isFetching && !isLoading && (
+            <span className="text-xs text-blue-400 bg-blue-950/60 border border-blue-800/60 px-2 py-0.5 rounded animate-pulse">
+              Refreshing...
+            </span>
+          )}
+        </div>
         <button
           onClick={() => openModal()}
           className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
@@ -208,7 +227,8 @@ const Customers = () => {
                     {user?.role === "admin" && (
                       <button
                         onClick={() => handleDelete(customer._id)}
-                        className="text-red-400 hover:text-red-300"
+                        disabled={deleteMutation.isPending}
+                        className="text-red-400 hover:text-red-300 disabled:opacity-50"
                       >
                         <Trash2 className="h-5 w-5" />
                       </button>
@@ -219,7 +239,7 @@ const Customers = () => {
             </tbody>
           </table>
         </div>
-        {customers.length === 0 && !loading && (
+        {customers.length === 0 && !isLoading && (
           <div className="p-6 text-center text-slate-500">
             No customers found. Try adjusting your search or add a new customer.
           </div>

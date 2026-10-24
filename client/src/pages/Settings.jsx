@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ENDPOINTS } from "../config/api";
-import axios from "axios";
+import apiClient from "../api/apiClient";
 import { Save } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { fetchSettings } from "../store/slices/settingsSlice";
@@ -12,13 +13,13 @@ import RichTextEditor from "../components/RichTextEditor";
 import { toast } from "react-hot-toast";
 
 const Settings = () => {
+  const queryClient = useQueryClient();
   const { user } = useSelector((state) => state.auth);
   const { data: settings, loading: settingsLoading } = useSelector(
     (state) => state.settings,
   );
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [showMediaLibrary, setShowMediaLibrary] = useState(false);
 
@@ -60,6 +61,25 @@ const Settings = () => {
     }
   }, [settings]);
 
+  const saveMutation = useMutation({
+    mutationFn: async (data) => {
+      const res = await apiClient.put(ENDPOINTS.SETTINGS, data);
+      return res.data;
+    },
+    onSuccess: () => {
+      setMessage("Settings saved successfully!");
+      toast.success("Settings saved successfully!");
+      dispatch(fetchSettings());
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      setTimeout(() => setMessage(""), 3000);
+    },
+    onError: (err) => {
+      const msg = err.response?.data?.message || "Error saving settings";
+      setMessage(msg);
+      toast.error(msg);
+    },
+  });
+
   const handleChange = (e, section = null) => {
     const { name, value, type, checked } = e.target;
     const val = type === "checkbox" ? checked : value;
@@ -78,24 +98,13 @@ const Settings = () => {
     setFormData((prev) => ({ ...prev, logo: media.url }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setSaving(true);
     setMessage("");
-
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.put(ENDPOINTS.SETTINGS, formData, config);
-      setMessage("Settings saved successfully!");
-      dispatch(fetchSettings()); // Refresh settings in Redux
-      setTimeout(() => setMessage(""), 3000);
-    } catch {
-      setMessage("Error saving settings");
-    } finally {
-      setSaving(false);
-    }
+    saveMutation.mutate(formData);
   };
+
+  const saving = saveMutation.isPending;
 
   if (settingsLoading && !settings)
     return <div className="text-white">Loading settings...</div>;
@@ -116,8 +125,8 @@ const Settings = () => {
           {message && (
             <span
               className={`px-4 py-2 rounded text-sm ${message.includes("Error")
-                  ? "bg-red-900/50 text-red-200 border border-red-800"
-                  : "bg-green-900/50 text-green-200 border border-green-800"
+                ? "bg-red-900/50 text-red-200 border border-red-800"
+                : "bg-green-900/50 text-green-200 border border-green-800"
                 }`}
             >
               {message}

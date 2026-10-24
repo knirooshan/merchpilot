@@ -1,4 +1,4 @@
-import axios from "axios";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 
 /**
@@ -51,20 +51,13 @@ export const formatVendorOption = (v) => {
  */
 export const searchVendorsApi = async (token, query = "", limit = 10) => {
   try {
-    const config = { headers: { Authorization: `Bearer ${token}` } };
-    const params = new URLSearchParams({
+    const params = {
       limit: String(limit),
       paginate: "true",
-    });
+      ...(query && query.trim() ? { search: query.trim() } : {}),
+    };
 
-    if (query && query.trim()) {
-      params.append("search", query.trim());
-    }
-
-    const { data } = await axios.get(
-      `${ENDPOINTS.VENDORS}?${params.toString()}`,
-      config
-    );
+    const { data } = await apiClient.get(ENDPOINTS.VENDORS, { params });
 
     const list = Array.isArray(data) ? data : data.data || [];
     return list.map(formatVendorOption);
@@ -80,8 +73,7 @@ export const searchVendorsApi = async (token, query = "", limit = 10) => {
 export const fetchVendorByIdApi = async (token, id) => {
   if (!id) return null;
   try {
-    const config = { headers: { Authorization: `Bearer ${token}` } };
-    const { data } = await axios.get(ENDPOINTS.VENDOR_BY_ID(id), config);
+    const { data } = await apiClient.get(ENDPOINTS.VENDOR_BY_ID(id));
     return formatVendorOption(data);
   } catch (error) {
     console.error("Error fetching vendor by id:", error);
@@ -94,20 +86,13 @@ export const fetchVendorByIdApi = async (token, id) => {
  */
 export const searchCustomersApi = async (token, query = "", limit = 10) => {
   try {
-    const config = { headers: { Authorization: `Bearer ${token}` } };
-    const params = new URLSearchParams({
+    const params = {
       limit: String(limit),
       paginate: "true",
-    });
+      ...(query && query.trim() ? { search: query.trim() } : {}),
+    };
 
-    if (query && query.trim()) {
-      params.append("search", query.trim());
-    }
-
-    const { data } = await axios.get(
-      `${ENDPOINTS.CUSTOMERS}?${params.toString()}`,
-      config
-    );
+    const { data } = await apiClient.get(ENDPOINTS.CUSTOMERS, { params });
 
     const list = Array.isArray(data) ? data : data.data || [];
     return list.map(formatCustomerOption);
@@ -132,8 +117,7 @@ export const fetchCustomerByIdApi = async (token, id) => {
     return null;
   }
   try {
-    const config = { headers: { Authorization: `Bearer ${token}` } };
-    const { data } = await axios.get(ENDPOINTS.CUSTOMER_BY_ID(id), config);
+    const { data } = await apiClient.get(ENDPOINTS.CUSTOMER_BY_ID(id));
     return formatCustomerOption(data);
   } catch (error) {
     console.error("Error fetching customer by id:", error);

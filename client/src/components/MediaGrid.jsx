@@ -1,55 +1,39 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Trash2, Check } from "lucide-react";
-import axios from "axios";
-import { useSelector } from "react-redux";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
+import toast from "react-hot-toast";
 
 const MediaGrid = ({ onSelect, selectable = false, refreshTrigger }) => {
-  const { user } = useSelector((state) => state.auth);
-  const [media, setMedia] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState(null);
 
-  const fetchMedia = async () => {
-    try {
-      const config = {
-        headers: {
-          Authorization: `Bearer ${user.token}`,
-        },
-      };
-      const response = await axios.get(
-        ENDPOINTS.MEDIA,
-        config
-      );
-      setMedia(response.data);
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching media:", error);
-      setLoading(false);
-    }
-  };
+  const { data: mediaData, isLoading: loading } = useQuery({
+    queryKey: ["media", refreshTrigger],
+    queryFn: async () => {
+      const response = await apiClient.get(ENDPOINTS.MEDIA);
+      return Array.isArray(response.data) ? response.data : response.data?.data || [];
+    },
+  });
+  const media = mediaData || [];
 
-  useEffect(() => {
-    fetchMedia();
-  }, [refreshTrigger]);
+  const deleteMutation = useMutation({
+    mutationFn: (id) => apiClient.delete(ENDPOINTS.MEDIA_BY_ID(id)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["media"] });
+      toast.success("Image deleted");
+    },
+    onError: (error) => {
+      console.error("Error deleting media:", error);
+      toast.error("Failed to delete media");
+    },
+  });
 
-  const handleDelete = async (e, id) => {
+  const handleDelete = (e, id) => {
     e.stopPropagation();
     if (!window.confirm("Are you sure you want to delete this image?")) return;
-
-    try {
-      const token = localStorage.getItem("token");
-      const config = {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      };
-      await axios.delete(ENDPOINTS.MEDIA_BY_ID(id), config);
-      fetchMedia();
-    } catch (error) {
-      console.error("Error deleting media:", error);
-      alert("Failed to delete media");
-    }
+    deleteMutation.mutate(id);
   };
 
   const handleSelect = (item) => {
@@ -81,8 +65,8 @@ const MediaGrid = ({ onSelect, selectable = false, refreshTrigger }) => {
         <div
           key={item._id}
           className={`relative group aspect-square rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${selectable && selectedId === item._id
-              ? "border-blue-500 ring-2 ring-blue-500 ring-opacity-50"
-              : "border-slate-800 hover:border-slate-600"
+            ? "border-blue-500 ring-2 ring-blue-500 ring-opacity-50"
+            : "border-slate-800 hover:border-slate-600"
             }`}
           onClick={() => handleSelect(item)}
         >

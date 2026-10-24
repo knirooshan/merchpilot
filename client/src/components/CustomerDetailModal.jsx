@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useSelector } from "react-redux";
-import axios from "axios";
+import { useQuery } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import {
   X,
@@ -51,10 +52,10 @@ const useCurrencyFmt = () => {
 const fmtDate = (d) =>
   d
     ? new Date(d).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      })
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    })
     : "-";
 
 const CHART_COLORS = [
@@ -252,31 +253,23 @@ const PaidVsBalance = ({ paid, balance, fmtFull }) => {
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════════ */
 const CustomerDetailModal = ({ customerId, onClose }) => {
-  const { user } = useSelector((state) => state.auth);
   const { fmt, fmtFull } = useCurrencyFmt();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const fetchSummary = async () => {
-      try {
-        const config = { headers: { Authorization: `Bearer ${user.token}` } };
-        const { data: summary } = await axios.get(
-          ENDPOINTS.CUSTOMER_SUMMARY(customerId),
-          config,
-        );
-        setData(summary);
-      } catch (err) {
-        setError(
-          err.response?.data?.message || "Failed to load customer details",
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchSummary();
-  }, [customerId, user.token]);
+  const {
+    data,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: ["customerSummary", customerId],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.CUSTOMER_SUMMARY(customerId));
+      return res.data;
+    },
+    enabled: !!customerId,
+  });
+
+  const error =
+    queryError?.response?.data?.message || queryError?.message || null;
 
   const { monthlySpend, invoiceStatusData, paymentChannelData, topProducts } =
     useMemo(() => {
@@ -341,8 +334,8 @@ const CustomerDetailModal = ({ customerId, onClose }) => {
 
   const customerName = data
     ? `${data.customer.salutation ? data.customer.salutation + " " : ""}${data.customer.firstName || ""} ${data.customer.lastName || ""}`.trim() ||
-      data.customer.billing?.company ||
-      "Unnamed Customer"
+    data.customer.billing?.company ||
+    "Unnamed Customer"
     : "";
 
   return (

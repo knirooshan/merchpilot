@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { useSelector } from "react-redux";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import toast from "react-hot-toast";
 import { ENDPOINTS } from "../config/api";
 
@@ -11,85 +12,74 @@ const DeliveryUpdateModal = ({
   invoiceNumber,
   onSaveSuccess,
 }) => {
+  const queryClient = useQueryClient();
   const { user } = useSelector((state) => state.auth);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [invoiceId, setInvoiceId] = useState(null);
   const [formData, setFormData] = useState({
     status: "pending",
     trackingNumbers: "",
     note: "",
   });
 
+  const { data: delivery, isLoading: loading } = useQuery({
+    queryKey: ["delivery", invoiceNumber],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.DELIVERY_SEARCH(invoiceNumber));
+      return res.data;
+    },
+    enabled: Boolean(isOpen && invoiceNumber),
+  });
+
   useEffect(() => {
-    if (isOpen && invoiceNumber) {
-      fetchDeliveryDetails();
-    }
-  }, [isOpen, invoiceNumber]);
-
-  const fetchDeliveryDetails = async () => {
-    try {
-      setLoading(true);
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const res = await axios.get(
-        ENDPOINTS.DELIVERY_SEARCH(invoiceNumber),
-        config,
-      );
-
-      const delivery = res.data;
-      setInvoiceId(delivery.invoice._id);
-
+    if (delivery) {
       setFormData({
         status: delivery.status || "pending",
         trackingNumbers: delivery.trackingNumbers?.join(", ") || "",
         note: "",
       });
-    } catch (error) {
-      console.error("Error fetching delivery details:", error);
-      toast.error("Failed to load delivery details");
-      onClose();
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [delivery]);
+
+  const updateMutation = useMutation({
+    mutationFn: async (payload) => {
+      const id = delivery?.invoice?._id;
+      return apiClient.put(ENDPOINTS.DELIVERY_UPDATE(id), payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["delivery", invoiceNumber] });
+      queryClient.invalidateQueries({ queryKey: ["deliveryQueue"] });
+      toast.success("Delivery status updated successfully");
+      if (onSaveSuccess) onSaveSuccess();
+      onClose();
+    },
+    onError: (err) => {
+      console.error("Error updating delivery:", err);
+      toast.error(err.response?.data?.message || "Failed to update delivery");
+    },
+  });
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    if (!invoiceId) return;
+    if (!delivery?.invoice?._id) return;
 
-    try {
-      setSaving(true);
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
+    const payload = {
+      status: formData.status,
+      trackingNumbers: formData.trackingNumbers
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t),
+      note: formData.note,
+      updatedBy: user?.name,
+    };
 
-      const payload = {
-        status: formData.status,
-        trackingNumbers: formData.trackingNumbers
-          .split(",")
-          .map((t) => t.trim())
-          .filter((t) => t),
-        note: formData.note,
-        updatedBy: user.name,
-      };
-
-      await axios.put(ENDPOINTS.DELIVERY_UPDATE(invoiceId), payload, config);
-
-      toast.success("Delivery status updated successfully");
-      if (onSaveSuccess) onSaveSuccess();
-      onClose();
-    } catch (error) {
-      console.error("Error updating delivery:", error);
-      toast.error("Failed to update delivery");
-    } finally {
-      setSaving(false);
-    }
+    updateMutation.mutate(payload);
   };
+
+  const saving = updateMutation.isPending;
 
   if (!isOpen) return null;
 

@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { pdf } from "@react-pdf/renderer";
 import {
@@ -25,30 +26,27 @@ import { formatDate } from "../utils/date";
 import { getTaxDisplay } from "../utils/taxDisplay";
 import { urlToBase64 } from "../utils/imageUtils";
 import DeliveryUpdateModal from "../components/DeliveryUpdateModal";
+import toast from "react-hot-toast";
 
 const InvoiceView = () => {
+  const queryClient = useQueryClient();
   const { id } = useParams();
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
-  const [invoice, setInvoice] = useState(null);
-  const [logoBase64, setLogoBase64] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [sendingEmail, setSendingEmail] = useState(false);
   const [downloadingPDF, setDownloadingPDF] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
 
-  const fetchData = async () => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const invRes = await axios.get(ENDPOINTS.INVOICE_BY_ID(id), config);
-
-      const invoiceData = invRes.data;
+  const { data: invoice, isLoading } = useQuery({
+    queryKey: ["invoice", id],
+    queryFn: async () => {
+      const invRes = await apiClient.get(ENDPOINTS.INVOICE_BY_ID(id));
+      const invoiceData = { ...invRes.data };
+      const token = user?.token;
 
       // Convert product images to base64 for items
       const itemsWithImages = await Promise.all(
-        invoiceData.items.map(async (item) => {
+        (invoiceData.items || []).map(async (item) => {
           if (item.product?.images && item.product.images.length > 0) {
             try {
               const base64Image = await urlToBase64(
@@ -66,30 +64,72 @@ const InvoiceView = () => {
       );
 
       invoiceData.items = itemsWithImages;
-      setInvoice(invoiceData);
+      return invoiceData;
+    },
+    enabled: Boolean(id),
+  });
 
-      // Convert logo URL to base64 for PDF
-      if (settings?.logo) {
-        const base64Logo = await urlToBase64(settings.logo, token);
-        setLogoBase64(base64Logo);
-      }
+  const { data: logoBase64 } = useQuery({
+    queryKey: ["logoBase64", settings?.logo],
+    queryFn: async () => {
+      if (!settings?.logo) return null;
+      return urlToBase64(settings.logo, user?.token);
+    },
+    enabled: Boolean(settings?.logo),
+  });
 
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching data:", error);
-      setLoading(false);
-    }
-  };
+  const sendEmailMutation = useMutation({
+    mutationFn: async ({ pdfBase64 }) => {
+      return apiClient.post(ENDPOINTS.EMAIL_SEND_INVOICE(id), { pdfBase64 });
+    },
+    onSuccess: () => {
+      toast.success("Email sent successfully!");
+    },
+    onError: (error) => {
+      console.error("Error sending email:", error);
+      toast.error(
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to send email. Please check SMTP settings.",
+      );
+    },
+  });
 
-  useEffect(() => {
-    fetchData();
-  }, [id, user.token, settings]);
+  const paymentMutation = useMutation({
+    mutationFn: async (paymentData) => {
+      return apiClient.post(ENDPOINTS.PAYMENTS, paymentData);
+    },
+    onSuccess: () => {
+      setIsPaymentModalOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["invoice", id] });
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      toast.success("Payment saved successfully");
+    },
+    onError: (error) => {
+      console.error("Error saving payment:", error);
+      toast.error(error.response?.data?.message || "Failed to save payment");
+    },
+  });
+
+  const writeOffMutation = useMutation({
+    mutationFn: async () => {
+      return apiClient.put(ENDPOINTS.INVOICE_WRITE_OFF(id), {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invoice", id] });
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      toast.success("Invoice written off successfully");
+    },
+    onError: (error) => {
+      console.error("Error writing off invoice:", error);
+      toast.error(error.response?.data?.message || "Failed to write off invoice");
+    },
+  });
 
   const handleSendEmail = async () => {
     if (!window.confirm("Send this invoice to the customer via email?")) return;
-    setSendingEmail(true);
     try {
-      // Generate PDF blob from React component
       const pdfDoc = (
         <InvoicePDF
           invoice={invoice}
@@ -98,7 +138,6 @@ const InvoiceView = () => {
       );
       const blob = await pdf(pdfDoc).toBlob();
 
-      // Convert blob to base64
       const reader = new FileReader();
       const base64Promise = new Promise((resolve) => {
         reader.onloadend = () => {
@@ -109,51 +148,25 @@ const InvoiceView = () => {
       reader.readAsDataURL(blob);
       const pdfBase64 = await base64Promise;
 
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.post(ENDPOINTS.EMAIL_SEND_INVOICE(id), { pdfBase64 }, config);
-      alert("Email sent successfully!");
+      sendEmailMutation.mutate({ pdfBase64 });
     } catch (error) {
-      console.error("Error sending email:", error);
-      alert(
-        error.response?.data?.message ||
-        error.message ||
-        "Failed to send email. Please check SMTP settings.",
-      );
-    } finally {
-      setSendingEmail(false);
+      console.error("Error generating PDF for email:", error);
+      toast.error("Failed to generate PDF for email.");
     }
   };
 
-  const handlePaymentSave = async (paymentData) => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.post(ENDPOINTS.PAYMENTS, paymentData, config);
-      setIsPaymentModalOpen(false);
-      fetchData(); // Refresh invoice data
-    } catch (error) {
-      console.error("Error saving payment:", error);
-      alert("Failed to save payment");
-    }
+  const handlePaymentSave = (paymentData) => {
+    paymentMutation.mutate(paymentData);
   };
 
-  const handleWriteOff = async () => {
+  const handleWriteOff = () => {
     if (
       !window.confirm(
         "Are you sure you want to write off the remaining balance? This cannot be undone.",
       )
     )
       return;
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.put(ENDPOINTS.INVOICE_WRITE_OFF(id), {}, config);
-      fetchData();
-    } catch (error) {
-      console.error("Error writing off invoice:", error);
-      alert("Failed to write off invoice");
-    }
+    writeOffMutation.mutate();
   };
 
   const handleDownloadInvoicePDF = async () => {
@@ -177,7 +190,7 @@ const InvoiceView = () => {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Error downloading invoice PDF:", error);
-      alert("Failed to download invoice PDF. Please try again.");
+      toast.error("Failed to download invoice PDF. Please try again.");
     } finally {
       setDownloadingPDF(false);
     }
@@ -204,13 +217,13 @@ const InvoiceView = () => {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Error downloading delivery receipt:", error);
-      alert("Failed to download delivery receipt. Please try again.");
+      toast.error("Failed to download delivery receipt. Please try again.");
     } finally {
       setDownloadingPDF(false);
     }
   };
 
-  if (loading) return <div className="text-white">Loading...</div>;
+  if (isLoading) return <div className="text-white">Loading...</div>;
   if (!invoice) return <div>Invoice not found</div>;
 
   const effectiveSettings = getDocumentCurrencySettings(invoice, settings);
@@ -246,11 +259,11 @@ const InvoiceView = () => {
           {invoice?.customer?.email && (
             <button
               onClick={handleSendEmail}
-              disabled={sendingEmail}
+              disabled={sendEmailMutation.isPending}
               className="flex items-center px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors disabled:opacity-50"
             >
               <Mail className="mr-2 h-5 w-5" />
-              {sendingEmail ? "Sending..." : "Send Email"}
+              {sendEmailMutation.isPending ? "Sending..." : "Send Email"}
             </button>
           )}
           <button
@@ -305,11 +318,11 @@ const InvoiceView = () => {
               Status:{" "}
               <span
                 className={`font-semibold uppercase ${invoice.status === "paid"
-                    ? "text-green-600"
-                    : invoice.status === "overdue" ||
-                      invoice.status === "written-off"
-                      ? "text-red-600"
-                      : "text-yellow-600"
+                  ? "text-green-600"
+                  : invoice.status === "overdue" ||
+                    invoice.status === "written-off"
+                    ? "text-red-600"
+                    : "text-yellow-600"
                   }`}
               >
                 {invoice.status.replace("_", " ")}
@@ -601,6 +614,9 @@ const InvoiceView = () => {
           isOpen={isDeliveryModalOpen}
           onClose={() => setIsDeliveryModalOpen(false)}
           invoiceNumber={invoice.invoiceNumber}
+          onSaveSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ["invoice", id] });
+          }}
         />
       )}
     </div>

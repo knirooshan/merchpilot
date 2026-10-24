@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
+import toast from "react-hot-toast";
 import { ENDPOINTS } from "../config/api";
 import { Eye, ExternalLink, RefreshCcw } from "lucide-react";
 import { formatCurrency } from "../utils/currency";
@@ -11,17 +13,13 @@ import Pagination from "../components/Pagination";
 import { useDebounce } from "../utils/useDebounce";
 
 const Orders = () => {
-  const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
+  const queryClient = useQueryClient();
+
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 350);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalOrders, setTotalOrders] = useState(0);
   const [filters, setFilters] = useState({
     status: "all",
     startDate: "",
@@ -32,48 +30,73 @@ const Orders = () => {
     setPage(1);
   }, [debouncedSearch, filters]);
 
-  useEffect(() => {
-    fetchData();
-  }, [page, pageSize, debouncedSearch, filters]);
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(pageSize),
-      });
-      if (debouncedSearch && debouncedSearch.trim()) {
-        params.append("search", debouncedSearch.trim());
-      }
-      if (filters.status !== "all") params.append("status", filters.status);
-      if (filters.startDate) params.append("startDate", filters.startDate);
-      if (filters.endDate) params.append("endDate", filters.endDate);
-
-      const ordersRes = await axios.get(
-        `${ENDPOINTS.ORDERS}?${params.toString()}`,
-        config
-      );
-
-      const data = ordersRes.data;
-      if (Array.isArray(data)) {
-        setOrders(data);
-        setTotalOrders(data.length);
-        setTotalPages(Math.ceil(data.length / pageSize) || 1);
-      } else {
-        setOrders(data.data || []);
-        setTotalOrders(data.total || 0);
-        setTotalPages(data.pages || 1);
-      }
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching data:", error);
-      setLoading(false);
-    }
+  const queryParams = {
+    page,
+    limit: pageSize,
+    ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+    ...(filters.status !== "all" ? { status: filters.status } : {}),
+    ...(filters.startDate ? { startDate: filters.startDate } : {}),
+    ...(filters.endDate ? { endDate: filters.endDate } : {}),
   };
+
+  const {
+    data: ordersData,
+    isLoading,
+    isFetching,
+    error,
+  } = useQuery({
+    queryKey: ["orders", queryParams],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.ORDERS, {
+        params: queryParams,
+      });
+      return res.data;
+    },
+    placeholderData: (previousData) => previousData,
+  });
+
+  const orders = Array.isArray(ordersData)
+    ? ordersData
+    : ordersData?.data || [];
+  const totalOrders = Array.isArray(ordersData)
+    ? ordersData.length
+    : ordersData?.total || 0;
+  const totalPages = Array.isArray(ordersData)
+    ? Math.ceil(ordersData.length / pageSize) || 1
+    : ordersData?.pages || 1;
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.post(ENDPOINTS.ORDERS_SYNC, {});
+      return res.data;
+    },
+    onSuccess: (data) => {
+      toast.success(`Successfully synced ${data.orders?.length || 0} orders!`);
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+    },
+    onError: (err) => {
+      console.error("Error syncing orders:", err);
+      toast.error(
+        err.response?.data?.message ||
+        "Failed to sync orders. Please check your WooCommerce settings.",
+      );
+    },
+  });
+
+  const refundMutation = useMutation({
+    mutationFn: async ({ orderId }) => {
+      await apiClient.put(`${ENDPOINTS.ORDERS}/${orderId}/refund`, {});
+    },
+    onSuccess: () => {
+      toast.success("Order refunded successfully");
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+    },
+    onError: (err) => {
+      console.error("Error refunding order:", err);
+      toast.error(err.response?.data?.message || "Failed to refund order");
+    },
+  });
 
   const resetFilters = () => {
     setSearch("");
@@ -90,49 +113,21 @@ const Orders = () => {
     );
   };
 
-  const handleSync = async () => {
+  const handleSync = () => {
     if (
-      !window.confirm("Sync orders from WooCommerce? This may take a moment.")
+      window.confirm("Sync orders from WooCommerce? This may take a moment.")
     ) {
-      return;
-    }
-
-    setSyncing(true);
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.post(ENDPOINTS.ORDERS_SYNC, {}, config);
-      alert(`Successfully synced ${data.orders.length} orders!`);
-      fetchData(); // Refresh the orders list
-    } catch (error) {
-      console.error("Error syncing orders:", error);
-      alert(
-        error.response?.data?.message ||
-        "Failed to sync orders. Please check your WooCommerce settings."
-      );
-    } finally {
-      setSyncing(false);
+      syncMutation.mutate();
     }
   };
 
-  const handleRefund = async (orderId, orderNumber) => {
+  const handleRefund = (orderId, orderNumber) => {
     if (
-      !window.confirm(
-        `Are you sure you want to refund order ${orderNumber}?\n\nThis will:\n- Mark the order as 'Refunded'\n- Mark associated invoice as 'Refunded'\n- Mark all payment records as 'Refunded'\n\nThis action cannot be undone.`
+      window.confirm(
+        `Are you sure you want to refund order ${orderNumber}?\n\nThis will:\n- Mark the order as 'Refunded'\n- Mark associated invoice as 'Refunded'\n- Mark all payment records as 'Refunded'\n\nThis action cannot be undone.`,
       )
     ) {
-      return;
-    }
-
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.put(`${ENDPOINTS.ORDERS}/${orderId}/refund`, {}, config);
-      alert("Order refunded successfully");
-      fetchData(); // Refresh the orders list
-    } catch (error) {
-      console.error("Error refunding order:", error);
-      alert(error.response?.data?.message || "Failed to refund order");
+      refundMutation.mutate({ orderId, orderNumber });
     }
   };
 
@@ -156,12 +151,30 @@ const Orders = () => {
     }
   };
 
-  if (loading) return <div className="text-white">Loading orders...</div>;
+  if (isLoading) return <div className="text-white">Loading orders...</div>;
+
+  if (error && !ordersData) {
+    return (
+      <div className="p-6 bg-red-900/20 border border-red-800 text-red-400 rounded-lg">
+        <p className="font-semibold">Failed to load orders</p>
+        <p className="text-sm mt-1">
+          {error.response?.data?.message || error.message}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-white">Orders</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white">Orders</h1>
+          {isFetching && !isLoading && (
+            <span className="text-xs text-blue-400 bg-blue-950/60 border border-blue-800/60 px-2 py-0.5 rounded animate-pulse">
+              Refreshing...
+            </span>
+          )}
+        </div>
         <div className="flex gap-3 items-center">
           <div className="text-sm text-slate-400">
             {orders.length} total orders
@@ -169,10 +182,10 @@ const Orders = () => {
           {!(settings?.modules?.woocommerce === false) && (
             <button
               onClick={handleSync}
-              disabled={syncing}
+              disabled={syncMutation.isPending}
               className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {syncing ? "Syncing..." : "Sync from WooCommerce"}
+              {syncMutation.isPending ? "Syncing..." : "Sync from WooCommerce"}
             </button>
           )}
         </div>
@@ -318,7 +331,8 @@ const Orders = () => {
                         onClick={() =>
                           handleRefund(order._id, order.orderNumber)
                         }
-                        className="text-orange-400 hover:text-orange-300"
+                        disabled={refundMutation.isPending}
+                        className="text-orange-400 hover:text-orange-300 disabled:opacity-50"
                         title="Refund order"
                       >
                         <RefreshCcw className="h-5 w-5" />
@@ -330,7 +344,7 @@ const Orders = () => {
             </tbody>
           </table>
         </div>
-        {orders.length === 0 && !loading && (
+        {orders.length === 0 && !isLoading && (
           <div className="p-6 text-center text-slate-500">
             No orders found. Try adjusting your search or filters.
           </div>

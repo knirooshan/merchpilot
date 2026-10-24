@@ -8,7 +8,7 @@ import { ENDPOINTS } from "./config/api";
 import { useEffect, useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { logout } from "./store/slices/authSlice";
-import axios from "axios";
+import apiClient from "./api/apiClient";
 import { Toaster } from "react-hot-toast";
 import PrivateRoute from "./components/PrivateRoute";
 import Layout from "./components/Layout";
@@ -51,44 +51,9 @@ function App() {
   const dispatch = useDispatch();
 
   useEffect(() => {
-    // Response Interceptor for Setup and Auth
-    const responseInterceptor = axios.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error.response?.data?.code === "SETUP_REQUIRED") {
-          setSetupRequired(true);
-        }
-
-        // Handle token expiration/failure
-        if (
-          error.response?.status === 401 &&
-          (error.response?.data?.code === "INVALID_TOKEN" ||
-            error.response?.data?.code === "NO_TOKEN")
-        ) {
-          dispatch(logout());
-        }
-
-        return Promise.reject(error);
-      },
-    );
-
-    // Request Interceptor for Auth Token
-    const requestInterceptor = axios.interceptors.request.use(
-      (config) => {
-        const user = JSON.parse(localStorage.getItem("user"));
-        if (user && user.token) {
-          config.headers.Authorization = `Bearer ${user.token}`;
-        }
-        return config;
-      },
-      (error) => Promise.reject(error),
-    );
-
     const checkState = async () => {
       try {
-        // Try a lightweight public call or the first-run check
-        // If we need setup, the interceptor will catch it
-        const { data } = await axios.get(ENDPOINTS.FIRST_RUN_CHECK);
+        const { data } = await apiClient.get(ENDPOINTS.FIRST_RUN_CHECK);
         setIsFirstRun(data.isFirstRun);
 
         if (data.isFirstRun) {
@@ -97,10 +62,9 @@ function App() {
 
         // Verify token if authenticated
         if (isAuthenticated) {
-          await axios.get(ENDPOINTS.AUTH_VERIFY);
+          await apiClient.get(ENDPOINTS.AUTH_VERIFY);
         }
       } catch (error) {
-        // If 403, interceptor handles it. If 404/500, log it.
         if (error.response?.status !== 403) {
           console.error("Failed to check status:", error);
           setIsFirstRun(false);
@@ -112,11 +76,13 @@ function App() {
 
     checkState();
 
+    const handleSetupRequired = () => setSetupRequired(true);
+    window.addEventListener("merchpilot:setup_required", handleSetupRequired);
+
     return () => {
-      axios.interceptors.response.eject(responseInterceptor);
-      axios.interceptors.request.eject(requestInterceptor);
+      window.removeEventListener("merchpilot:setup_required", handleSetupRequired);
     };
-  }, [dispatch]);
+  }, [dispatch, isAuthenticated]);
 
   if (loading) {
     return (

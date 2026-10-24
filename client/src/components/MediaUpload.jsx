@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { Upload, X, Loader, AlertCircle, CheckCircle } from "lucide-react";
-import axios from "axios";
+import apiClient from "../api/apiClient";
 import { useSelector } from "react-redux";
 import { ENDPOINTS } from "../config/api";
 
@@ -53,12 +53,7 @@ const MediaUpload = ({ onUploadComplete }) => {
       formData.append("file", file);
 
       try {
-        const response = await axios.post(ENDPOINTS.MEDIA_UPLOAD, formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
-            Authorization: `Bearer ${user.token}`,
-          },
-        });
+        const response = await apiClient.post(ENDPOINTS.MEDIA_UPLOAD, formData);
         updateFile(id, { status: "success" });
         if (onUploadComplete) {
           onUploadComplete(response.data);
@@ -124,11 +119,10 @@ const MediaUpload = ({ onUploadComplete }) => {
   return (
     <div className="space-y-3">
       <div
-        className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-          isDragging
+        className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDragging
             ? "border-blue-500 bg-blue-500/10"
             : "border-slate-700 hover:border-slate-600 bg-slate-900/50"
-        }`}
+          }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -167,13 +161,12 @@ const MediaUpload = ({ onUploadComplete }) => {
           {fileQueue.map(({ id, file, status, error }) => (
             <li
               key={id}
-              className={`flex items-start gap-3 px-4 py-3 rounded-lg border text-sm ${
-                status === "error"
+              className={`flex items-start gap-3 px-4 py-3 rounded-lg border text-sm ${status === "error"
                   ? "bg-red-900/40 border-red-700 text-red-300"
                   : status === "success"
-                  ? "bg-green-900/30 border-green-700 text-green-300"
-                  : "bg-slate-900/50 border-slate-700 text-slate-400"
-              }`}
+                    ? "bg-green-900/30 border-green-700 text-green-300"
+                    : "bg-slate-900/50 border-slate-700 text-slate-400"
+                }`}
             >
               {status === "uploading" || status === "pending" ? (
                 <Loader className="h-4 w-4 mt-0.5 animate-spin shrink-0" />

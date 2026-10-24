@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { useNavigate, useParams } from "react-router-dom";
 import { Plus, Trash, Save, Edit2 } from "lucide-react";
@@ -21,15 +22,15 @@ import {
   fetchCustomerByIdApi,
   formatCustomerOption,
 } from "../utils/selectHelpers";
+import toast from "react-hot-toast";
 
 const EditQuotation = () => {
+  const queryClient = useQueryClient();
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
   const navigate = useNavigate();
   const { id } = useParams();
   const [selectedCustomerOpt, setSelectedCustomerOpt] = useState(null);
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showItemModal, setShowItemModal] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState(null);
@@ -49,72 +50,75 @@ const EditQuotation = () => {
     terms: "",
   });
 
+  const { data: productsData, isLoading: loadingProducts } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.PRODUCTS);
+      return Array.isArray(res.data) ? res.data : res.data?.data || [];
+    },
+  });
+  const products = productsData || [];
+
+  const { data: quotationData, isLoading: loadingQuotation } = useQuery({
+    queryKey: ["quotation", id],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.QUOTATION_BY_ID(id));
+      return res.data;
+    },
+    enabled: Boolean(id),
+  });
+
+  const loading = loadingProducts || loadingQuotation;
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const token = user.token;
-        const config = { headers: { Authorization: `Bearer ${token}` } };
-        const [prodRes, quoteRes] = await Promise.all([
-          axios.get(ENDPOINTS.PRODUCTS, config),
-          axios.get(ENDPOINTS.QUOTATION_BY_ID(id), config),
-        ]);
-        setProducts(prodRes.data);
-
-        const quotation = quoteRes.data;
-        if (quotation.customer) {
-          setSelectedCustomerOpt(formatCustomerOption(quotation.customer));
-        }
-        setFormData({
-          customer: quotation.customer?._id || quotation.customer || "",
-          items: quotation.items.map((item) => ({
-            product:
-              typeof item.product === "object"
-                ? item.product?._id
-                : item.product || null,
-            name: item.name,
-            description: item.description || "",
-            sku: item.sku || "",
-            price: item.price,
-            quantity: item.quantity,
-            discount: item.discount || 0,
-            discountType: item.discountType || "fixed",
-            isTaxable: item.isTaxable ?? false,
-            taxMethod:
-              item.taxMethod || settings?.tax?.defaultMethod || "exclusive",
-            itemTax: item.itemTax || 0,
-            total: item.total,
-          })),
-          notes: quotation.notes || "",
-          quotationDate: quotation.quotationDate
-            ? quotation.quotationDate.split("T")[0]
-            : "",
-          validUntil: quotation.validUntil
-            ? quotation.validUntil.split("T")[0]
-            : "",
-          taxRate: quotation.taxRate || settings?.tax?.rate || 0,
-          discount: quotation.discount || 0,
-          deliveryCharge: quotation.deliveryCharge || 0,
-          deliveryNote: quotation.deliveryNote || "",
-          terms: quotation.terms || "",
-        });
-
-        // Restore saved currency (only if foreign)
-        if (isForeignCurrency(quotation, settings)) {
-          setCurrency(quotation.currency);
-          setExchangeRate(quotation.exchangeRate || null);
-        } else {
-          setCurrency(null);
-          setExchangeRate(null);
-        }
-
-        setLoading(false);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        setLoading(false);
+    if (quotationData) {
+      if (quotationData.customer) {
+        setSelectedCustomerOpt(formatCustomerOption(quotationData.customer));
       }
-    };
-    fetchData();
-  }, [user.token, id, settings]);
+      setFormData({
+        customer: quotationData.customer?._id || quotationData.customer || "",
+        items: (quotationData.items || []).map((item) => ({
+          product:
+            typeof item.product === "object"
+              ? item.product?._id
+              : item.product || null,
+          name: item.name,
+          description: item.description || "",
+          sku: item.sku || "",
+          price: item.price,
+          quantity: item.quantity,
+          discount: item.discount || 0,
+          discountType: item.discountType || "fixed",
+          isTaxable: item.isTaxable ?? false,
+          taxMethod:
+            item.taxMethod || settings?.tax?.defaultMethod || "exclusive",
+          itemTax: item.itemTax || 0,
+          total: item.total,
+        })),
+        notes: quotationData.notes || "",
+        quotationDate: quotationData.quotationDate
+          ? quotationData.quotationDate.split("T")[0]
+          : "",
+        validUntil: quotationData.validUntil
+          ? quotationData.validUntil.split("T")[0]
+          : "",
+        taxRate: quotationData.taxRate || settings?.tax?.rate || 0,
+        discount: quotationData.discount || 0,
+        deliveryCharge: quotationData.deliveryCharge || 0,
+        deliveryNote: quotationData.deliveryNote || "",
+        terms: quotationData.terms || "",
+      });
+
+      // Restore saved currency (only if foreign)
+      if (isForeignCurrency(quotationData, settings)) {
+        setCurrency(quotationData.currency);
+        setExchangeRate(quotationData.exchangeRate || null);
+      } else {
+        setCurrency(null);
+        setExchangeRate(null);
+      }
+    }
+  }, [quotationData, settings]);
 
   const addItem = (item) => {
     if (editingItemIndex !== null) {
@@ -149,51 +153,61 @@ const EditQuotation = () => {
     );
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const totals = calculateTotals();
-
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const isForeign = isForeignCurrency({ currency, exchangeRate }, settings);
-      await axios.put(
-        ENDPOINTS.QUOTATION_BY_ID(id),
-        {
-          ...formData,
-          items: totals.itemsWithTax,
-          subtotal: totals.subtotal,
-          tax: totals.tax,
-          taxRate: formData.taxRate,
-          total: totals.total,
-          currency: isForeign ? currency : null,
-          exchangeRate: isForeign ? exchangeRate : null,
-        },
-        config,
-      );
+  const updateQuotationMutation = useMutation({
+    mutationFn: async (payload) => {
+      const { data } = await apiClient.put(ENDPOINTS.QUOTATION_BY_ID(id), payload);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["quotations"] });
+      queryClient.invalidateQueries({ queryKey: ["quotation", id] });
+      toast.success("Quotation updated successfully");
       navigate(`/quotations/${id}`);
-    } catch (error) {
+    },
+    onError: (error) => {
       console.error("Error updating quotation:", error);
-    }
-  };
+      toast.error(error.response?.data?.message || "Error updating quotation");
+    },
+  });
 
-  const handleSaveCustomer = async (customerData) => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.post(
-        ENDPOINTS.CUSTOMERS,
-        customerData,
-        config,
-      );
+  const createCustomerMutation = useMutation({
+    mutationFn: async (customerData) => {
+      const { data } = await apiClient.post(ENDPOINTS.CUSTOMERS, customerData);
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
       const opt = formatCustomerOption(data);
       setSelectedCustomerOpt(opt);
-      setFormData({ ...formData, customer: data._id });
+      setFormData((prev) => ({ ...prev, customer: data._id }));
       setShowCustomerModal(false);
-    } catch (error) {
+      toast.success("Customer created successfully");
+    },
+    onError: (error) => {
       console.error("Error creating customer:", error);
-      alert("Error creating customer");
-    }
+      toast.error(error.response?.data?.message || "Error creating customer");
+    },
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const totals = calculateTotals();
+    const isForeign = isForeignCurrency({ currency, exchangeRate }, settings);
+
+    updateQuotationMutation.mutate({
+      ...formData,
+      items: totals.itemsWithTax,
+      subtotal: totals.subtotal,
+      tax: totals.tax,
+      taxRate: formData.taxRate,
+      total: totals.total,
+      currency: isForeign ? currency : null,
+      exchangeRate: isForeign ? exchangeRate : null,
+    });
+  };
+
+  const handleSaveCustomer = (customerData) => {
+    createCustomerMutation.mutate(customerData);
   };
 
   const { subtotal, tax, total } = calculateTotals();
@@ -458,10 +472,11 @@ const EditQuotation = () => {
         <div className="flex justify-end">
           <button
             type="submit"
-            className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-sm font-medium transition-colors"
+            disabled={updateQuotationMutation.isPending}
+            className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-sm font-medium transition-colors disabled:opacity-50"
           >
             <Save className="mr-2 h-5 w-5" />
-            Save Changes
+            {updateQuotationMutation.isPending ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </form>

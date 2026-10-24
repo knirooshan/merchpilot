@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
+import { useMutation } from "@tanstack/react-query";
 import { setUser } from "../store/slices/authSlice";
 import { ENDPOINTS } from "../config/api";
-import axios from "axios";
+import apiClient from "../api/apiClient";
 import { Lock, Mail, User } from "lucide-react";
 
 const FirstTimeSetup = () => {
@@ -14,19 +15,31 @@ const FirstTimeSetup = () => {
     confirmPassword: "",
   });
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const dispatch = useDispatch();
+
+  const setupMutation = useMutation({
+    mutationFn: async (payload) => {
+      const { data } = await apiClient.post(ENDPOINTS.FIRST_RUN_SETUP, payload);
+      return data;
+    },
+    onSuccess: (data) => {
+      dispatch(setUser(data));
+      navigate("/");
+    },
+    onError: (err) => {
+      setError(err.response?.data?.message || "Failed to create admin user");
+    },
+  });
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     setError("");
 
-    // Validation
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -37,25 +50,14 @@ const FirstTimeSetup = () => {
       return;
     }
 
-    setLoading(true);
-
-    try {
-      const { data } = await axios.post(ENDPOINTS.FIRST_RUN_SETUP, {
-          name: formData.name,
-          email: formData.email,
-          password: formData.password,
-        }
-      );
-
-      // Save user to Redux and navigate to dashboard
-      dispatch(setUser(data));
-      navigate("/");
-    } catch (err) {
-      setError(err.response?.data?.message || "Failed to create admin user");
-    } finally {
-      setLoading(false);
-    }
+    setupMutation.mutate({
+      name: formData.name,
+      email: formData.email,
+      password: formData.password,
+    });
   };
+
+  const loading = setupMutation.isPending;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950">
