@@ -1,13 +1,17 @@
 import { Trash, ShoppingCart, User, Plus } from "lucide-react";
 import { formatCurrency } from "../utils/currency";
+import SearchableSelect from "./SearchableSelect";
 
 const POSCart = ({
   cart,
   onRemoveFromCart,
   onUpdateQuantity,
   onCheckout,
-  customers,
+  customers = [],
   selectedCustomer,
+  selectedCustomerOpt,
+  loadCustomerOptions,
+  fetchCustomerById,
   onSelectCustomer,
   onAddCustomer,
   total,
@@ -28,21 +32,43 @@ const POSCart = ({
           <span className="text-sm font-medium text-slate-300">Customer</span>
         </div>
         <div className="flex gap-2">
-          <select
-            value={selectedCustomer}
-            onChange={(e) => onSelectCustomer(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 rounded-md p-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-          >
-            <option value="0000-0000-0001">Walk-in Customer</option>
-            {customers.map((c) => (
-              <option key={c._id} value={c._id}>
-                {c.firstName} {c.lastName}
-              </option>
-            ))}
-          </select>
+          {loadCustomerOptions ? (
+            <SearchableSelect
+              value={selectedCustomer || "0000-0000-0001"}
+              onChange={(val, opt) => onSelectCustomer(val || "0000-0000-0001", opt)}
+              loadOptions={loadCustomerOptions}
+              fetchOptionById={fetchCustomerById}
+              selectedOption={selectedCustomerOpt}
+              fixedOptions={[
+                {
+                  value: "0000-0000-0001",
+                  label: "Walk-in Customer",
+                  subtext: "Default counter customer",
+                },
+              ]}
+              placeholder="Select Customer"
+              searchPlaceholder="Search customers..."
+              isClearable={false}
+              className="flex-1"
+            />
+          ) : (
+            <select
+              value={selectedCustomer}
+              onChange={(e) => onSelectCustomer(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-md p-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+            >
+              <option value="0000-0000-0001">Walk-in Customer</option>
+              {customers.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.firstName} {c.lastName}
+                </option>
+              ))}
+            </select>
+          )}
           <button
+            type="button"
             onClick={onAddCustomer}
-            className="bg-slate-800 hover:bg-slate-700 text-white rounded px-3 border border-slate-700"
+            className="bg-slate-800 hover:bg-slate-700 text-white rounded px-3 border border-slate-700 shrink-0"
             title="Add New Customer"
           >
             <Plus className="h-5 w-5" />

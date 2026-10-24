@@ -116,7 +116,8 @@ const getProducts = async (req, res) => {
     const filter = {};
 
     if (search && search.trim()) {
-      const searchRegex = { $regex: search.trim(), $options: "i" };
+      const safeSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const searchRegex = { $regex: safeSearch, $options: "i" };
       filter.$or = [
         { name: searchRegex },
         { sku: searchRegex },
@@ -169,7 +170,6 @@ const getProducts = async (req, res) => {
       .skip((currentPage - 1) * perPage);
 
     res.json({
-      products,
       data: products,
       total,
       page: currentPage,

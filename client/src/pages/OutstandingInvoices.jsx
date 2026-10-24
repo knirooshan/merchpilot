@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
+import toast from "react-hot-toast";
 import { ENDPOINTS } from "../config/api";
 import {
   AlertTriangle,
@@ -64,12 +66,8 @@ const DaysOverdueBadge = ({ days }) => {
 };
 
 const OutstandingInvoices = () => {
-  const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
 
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [viewMode, setViewMode] = useState("invoices"); // "invoices" | "customers"
   const [expandedCustomers, setExpandedCustomers] = useState({});
   const [filters, setFilters] = useState({
@@ -83,46 +81,43 @@ const OutstandingInvoices = () => {
   const debouncedInvoiceSearch = useDebounce(invoiceSearch, 350);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalInvoices, setTotalInvoices] = useState(0);
-  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     setPage(1);
   }, [debouncedInvoiceSearch, filters]);
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const config = {
-        headers: { Authorization: `Bearer ${user.token}` },
-        params: {
-          page,
-          limit: pageSize,
-        },
-      };
-      if (debouncedInvoiceSearch) config.params.search = debouncedInvoiceSearch;
-      if (filters.startDate) config.params.startDate = filters.startDate;
-      if (filters.endDate) config.params.endDate = filters.endDate;
-      if (filters.status) config.params.status = filters.status;
-      if (filters.customer) config.params.customer = filters.customer;
-
-      const res = await axios.get(ENDPOINTS.REPORTS_OUTSTANDING, config);
-      setData(res.data);
-      setTotalInvoices(res.data.total ?? res.data.totalInvoices ?? (res.data.invoices?.length || 0));
-      setTotalPages(res.data.pages ?? 1);
-    } catch (err) {
-      console.error("Error fetching outstanding invoices:", err);
-      setError("Failed to load outstanding invoices.");
-    } finally {
-      setLoading(false);
-    }
+  const queryParams = {
+    page,
+    limit: pageSize,
+    ...(debouncedInvoiceSearch ? { search: debouncedInvoiceSearch } : {}),
+    ...(filters.startDate ? { startDate: filters.startDate } : {}),
+    ...(filters.endDate ? { endDate: filters.endDate } : {}),
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.customer ? { customer: filters.customer } : {}),
   };
 
-  useEffect(() => {
-    fetchData();
-  }, [filters, page, pageSize, debouncedInvoiceSearch]);
+  const {
+    data,
+    isLoading: loading,
+    isFetching,
+    error: queryError,
+    refetch,
+  } = useQuery({
+    queryKey: ["outstandingInvoices", queryParams],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.REPORTS_OUTSTANDING, {
+        params: queryParams,
+      });
+      return res.data;
+    },
+    placeholderData: (previousData) => previousData,
+  });
+
+  const totalInvoices =
+    data?.total ?? data?.totalInvoices ?? (data?.invoices?.length || 0);
+  const totalPages = data?.pages ?? 1;
+  const error =
+    queryError?.response?.data?.message || queryError?.message || null;
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
@@ -139,37 +134,42 @@ const OutstandingInvoices = () => {
     return filters.startDate || filters.endDate || filters.status;
   };
 
-  const handleDownloadPDF = async () => {
-    try {
-      setDownloading(true);
-      const config = {
-        headers: { Authorization: `Bearer ${user.token}` },
-        responseType: "blob",
-      };
+  const downloadPdfMutation = useMutation({
+    mutationFn: async () => {
       const params = {};
       if (filters.startDate) params.startDate = filters.startDate;
       if (filters.endDate) params.endDate = filters.endDate;
       if (filters.status) params.status = filters.status;
 
-      const response = await axios.post(
+      const response = await apiClient.post(
         ENDPOINTS.PDF_OUTSTANDING_REPORT,
         params,
-        config,
+        { responseType: "blob" },
       );
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", "Outstanding_Invoices_Report.pdf");
+      link.setAttribute(
+        "download",
+        `Outstanding_Invoices_Report_${new Date().toISOString().split("T")[0]}.pdf`,
+      );
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch (err) {
+      window.URL.revokeObjectURL(url);
+    },
+    onSuccess: () => {
+      toast.success("Outstanding report downloaded");
+    },
+    onError: (err) => {
       console.error("Error downloading outstanding report PDF:", err);
-      alert("Failed to download outstanding report PDF");
-    } finally {
-      setDownloading(false);
-    }
+      toast.error("Failed to download outstanding report PDF");
+    },
+  });
+
+  const handleDownloadPDF = () => {
+    downloadPdfMutation.mutate();
   };
 
   const toggleCustomer = (id) => {
@@ -200,25 +200,32 @@ const OutstandingInvoices = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-white">Outstanding Invoices</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white">Outstanding Invoices</h1>
+          {isFetching && !loading && (
+            <span className="text-xs text-blue-400 bg-blue-950/60 border border-blue-800/60 px-2 py-0.5 rounded animate-pulse">
+              Refreshing...
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <button
             onClick={handleDownloadPDF}
-            disabled={downloading}
+            disabled={downloadPdfMutation.isPending}
             className="flex items-center px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700 border border-slate-700 transition-colors disabled:opacity-50"
             id="outstanding-download-pdf-btn"
           >
             <Download className="mr-2 h-5 w-5" />
-            {downloading ? "Generating..." : "Download PDF"}
+            {downloadPdfMutation.isPending ? "Generating..." : "Download PDF"}
           </button>
           <button
-            onClick={fetchData}
-            disabled={loading}
+            onClick={() => refetch()}
+            disabled={isFetching}
             className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50"
             id="outstanding-refresh-btn"
           >
             <RefreshCw
-              className={`mr-2 h-5 w-5 ${loading ? "animate-spin" : ""}`}
+              className={`mr-2 h-5 w-5 ${isFetching ? "animate-spin" : ""}`}
             />
             Refresh
           </button>
@@ -230,7 +237,7 @@ const OutstandingInvoices = () => {
         <div className="bg-red-900/20 border border-red-800 rounded-lg p-4 flex items-center justify-between">
           <span className="text-red-400 text-sm">{error}</span>
           <button
-            onClick={fetchData}
+            onClick={() => refetch()}
             className="text-xs text-red-400 hover:text-red-300 underline"
           >
             Retry
@@ -316,8 +323,8 @@ const OutstandingInvoices = () => {
           onClick={() => setViewMode("invoices")}
           id="outstanding-view-invoices-btn"
           className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === "invoices"
-              ? "bg-blue-600 text-white"
-              : "text-slate-400 hover:text-white"
+            ? "bg-blue-600 text-white"
+            : "text-slate-400 hover:text-white"
             }`}
         >
           <FileText size={15} />
@@ -327,8 +334,8 @@ const OutstandingInvoices = () => {
           onClick={() => setViewMode("customers")}
           id="outstanding-view-customers-btn"
           className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === "customers"
-              ? "bg-blue-600 text-white"
-              : "text-slate-400 hover:text-white"
+            ? "bg-blue-600 text-white"
+            : "text-slate-400 hover:text-white"
             }`}
         >
           <Users size={15} />

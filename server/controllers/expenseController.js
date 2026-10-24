@@ -195,7 +195,6 @@ const getExpenses = async (req, res) => {
       .skip((currentPage - 1) * perPage);
 
     res.json({
-      expenses,
       data: expenses,
       total,
       page: currentPage,

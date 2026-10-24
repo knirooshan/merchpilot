@@ -1,42 +1,41 @@
-import { useState, useEffect } from "react";
-import axios from "axios";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { useSelector } from "react-redux";
 import POSProductGrid from "../components/POSProductGrid";
 import POSCart from "../components/POSCart";
 import CustomerForm from "../components/CustomerForm";
+import {
+  searchCustomersApi,
+  fetchCustomerByIdApi,
+  formatCustomerOption,
+} from "../utils/selectHelpers";
+import toast from "react-hot-toast";
 
 const POS = () => {
+  const queryClient = useQueryClient();
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
-  const [products, setProducts] = useState([]);
-  const [customers, setCustomers] = useState([]);
+  const [selectedCustomerOpt, setSelectedCustomerOpt] = useState({
+    value: "0000-0000-0001",
+    label: "Walk-in Customer",
+    subtext: "Default counter customer",
+  });
   const [cart, setCart] = useState([]);
-  const [selectedCustomer, setSelectedCustomer] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState("0000-0000-0001");
   const [discount, setDiscount] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("Cash");
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const token = user.token;
-        const config = { headers: { Authorization: `Bearer ${token}` } };
-        const [prodRes, custRes] = await Promise.all([
-          axios.get(ENDPOINTS.PRODUCTS, config),
-          axios.get(ENDPOINTS.CUSTOMERS, config),
-        ]);
-        setProducts(prodRes.data);
-        setCustomers(custRes.data);
-        setLoading(false);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [user.token]);
+  const { data: productsData, isLoading: loading } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.PRODUCTS);
+      return Array.isArray(res.data) ? res.data : res.data?.data || [];
+    },
+  });
+  const products = productsData || [];
 
   const addToCart = (product) => {
     const existingItemIndex = cart.findIndex(
@@ -81,67 +80,20 @@ const POS = () => {
     return { subtotal, tax, total };
   };
 
-  const handleCheckout = async () => {
-    if (cart.length === 0) return;
-    const { subtotal, tax, total } = calculateTotals();
-
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-
-      // Check if walk-in customer is selected
-      const isWalkIn =
-        !selectedCustomer || selectedCustomer === "0000-0000-0001";
-      const customerId = isWalkIn ? "walk-in" : selectedCustomer;
-      const selectedCustomerData = !isWalkIn
-        ? customers.find((c) => c._id === customerId)
-        : null;
-
-      const orderData = {
-        orderNumber: `POS-${Date.now()}`,
-        customer: customerId,
-        customerInfo: {
-          firstName: selectedCustomerData?.firstName || (isWalkIn ? "Walk-in" : ""),
-          lastName:
-            selectedCustomerData?.lastName ||
-            selectedCustomerData?.billing?.company ||
-            (isWalkIn ? "Customer" : ""),
-          email: selectedCustomerData?.email || "",
-          phone: selectedCustomerData?.billing?.phone || "",
-          taxNumber: selectedCustomerData?.taxNumber || "",
-        },
-        items: cart.map((item) => ({
-          productId: item.product,
-          name: item.name,
-          quantity: item.quantity,
-          price: item.price,
-          total: item.price * item.quantity,
-        })),
-        subtotal,
-        tax,
-        discount,
-        total,
-        status: "completed",
-        paymentMethod: paymentMethod,
-        paymentMethodTitle: `${paymentMethod} Payment`,
-        dateCreated: new Date(),
-        datePaid: new Date(),
-        dateCompleted: new Date(),
-      };
-
-      // Create order first (this will handle walk-in customer creation)
-      const orderRes = await axios.post(ENDPOINTS.ORDERS, orderData, config);
-
-      // Use the customer from the created order for the invoice
+  const checkoutMutation = useMutation({
+    mutationFn: async ({
+      orderData,
+      invoiceItems,
+      subtotal,
+      tax,
+      discount,
+      total,
+      paymentMethod,
+    }) => {
+      const orderRes = await apiClient.post(ENDPOINTS.ORDERS, orderData);
       const invoiceData = {
-        customer: orderRes.data.customer._id || orderRes.data.customer,
-        items: cart.map((item) => ({
-          product: item.product,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          total: item.price * item.quantity,
-        })),
+        customer: orderRes.data.customer?._id || orderRes.data.customer,
+        items: invoiceItems,
         subtotal,
         tax,
         discount,
@@ -150,45 +102,118 @@ const POS = () => {
         paymentMethod: paymentMethod,
         dueDate: new Date(),
       };
+      const invoiceRes = await apiClient.post(ENDPOINTS.INVOICES, invoiceData);
 
-      // Create invoice with the actual customer ID
-      const invoiceRes = await axios.post(ENDPOINTS.INVOICES, invoiceData, config);
-
-      // Link invoice to order
-      if (orderRes.data._id && invoiceRes.data._id) {
-        await axios.put(
-          `${ENDPOINTS.ORDERS}/${orderRes.data._id}`,
-          { invoice: invoiceRes.data._id },
-          config
-        );
+      if (orderRes.data?._id && invoiceRes.data?._id) {
+        await apiClient.put(`${ENDPOINTS.ORDERS}/${orderRes.data._id}`, {
+          invoice: invoiceRes.data._id,
+        });
       }
-
-      alert("Order completed successfully!");
+      return { order: orderRes.data, invoice: invoiceRes.data };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast.success("Order completed successfully!");
       setCart([]);
       setDiscount(0);
       setSelectedCustomer("0000-0000-0001");
-    } catch (error) {
+      setSelectedCustomerOpt({
+        value: "0000-0000-0001",
+        label: "Walk-in Customer",
+        subtext: "Default counter customer",
+      });
+    },
+    onError: (error) => {
       console.error("Error processing checkout:", error);
-      alert("Error processing checkout");
-    }
-  };
+      toast.error(error.response?.data?.message || "Error processing checkout");
+    },
+  });
 
-  const handleSaveCustomer = async (customerData) => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.post(
-        ENDPOINTS.CUSTOMERS,
-        customerData,
-        config
-      );
-      setCustomers([...customers, data]);
+  const createCustomerMutation = useMutation({
+    mutationFn: async (customerData) => {
+      const { data } = await apiClient.post(ENDPOINTS.CUSTOMERS, customerData);
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      const opt = formatCustomerOption(data);
+      setSelectedCustomerOpt(opt);
       setSelectedCustomer(data._id);
       setShowCustomerModal(false);
-    } catch (error) {
+      toast.success("Customer created successfully");
+    },
+    onError: (error) => {
       console.error("Error creating customer:", error);
-      alert("Error creating customer");
-    }
+      toast.error("Error creating customer");
+    },
+  });
+
+  const handleCheckout = () => {
+    if (cart.length === 0 || checkoutMutation.isPending) return;
+    const { subtotal, tax, total } = calculateTotals();
+
+    const isWalkIn =
+      !selectedCustomer || selectedCustomer === "0000-0000-0001";
+    const customerId = isWalkIn ? "walk-in" : selectedCustomer;
+    const selectedCustomerData = !isWalkIn
+      ? selectedCustomerOpt?.customer || null
+      : null;
+
+    const orderData = {
+      orderNumber: `POS-${Date.now()}`,
+      customer: customerId,
+      customerInfo: {
+        firstName: selectedCustomerData?.firstName || (isWalkIn ? "Walk-in" : ""),
+        lastName:
+          selectedCustomerData?.lastName ||
+          selectedCustomerData?.billing?.company ||
+          (isWalkIn ? "Customer" : ""),
+        email: selectedCustomerData?.email || "",
+        phone: selectedCustomerData?.billing?.phone || "",
+        taxNumber: selectedCustomerData?.taxNumber || "",
+      },
+      items: cart.map((item) => ({
+        productId: item.product,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        total: item.price * item.quantity,
+      })),
+      subtotal,
+      tax,
+      discount,
+      total,
+      status: "completed",
+      paymentMethod: paymentMethod,
+      paymentMethodTitle: `${paymentMethod} Payment`,
+      dateCreated: new Date(),
+      datePaid: new Date(),
+      dateCompleted: new Date(),
+    };
+
+    const invoiceItems = cart.map((item) => ({
+      product: item.product,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      total: item.price * item.quantity,
+    }));
+
+    checkoutMutation.mutate({
+      orderData,
+      invoiceItems,
+      subtotal,
+      tax,
+      discount,
+      total,
+      paymentMethod,
+    });
+  };
+
+  const handleSaveCustomer = (customerData) => {
+    createCustomerMutation.mutate(customerData);
   };
 
   const { subtotal, tax, total } = calculateTotals();
@@ -208,9 +233,14 @@ const POS = () => {
           onRemoveFromCart={removeFromCart}
           onUpdateQuantity={updateQuantity}
           onCheckout={handleCheckout}
-          customers={customers}
           selectedCustomer={selectedCustomer}
-          onSelectCustomer={setSelectedCustomer}
+          selectedCustomerOpt={selectedCustomerOpt}
+          loadCustomerOptions={(q) => searchCustomersApi(user.token, q, 10)}
+          fetchCustomerById={(id) => fetchCustomerByIdApi(user.token, id)}
+          onSelectCustomer={(val, opt) => {
+            setSelectedCustomer(val);
+            if (opt) setSelectedCustomerOpt(opt);
+          }}
           onAddCustomer={() => setShowCustomerModal(true)}
           total={total}
           subtotal={subtotal}

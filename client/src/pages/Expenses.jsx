@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
+import toast from "react-hot-toast";
 import { Plus, Trash, DollarSign, Edit, X, Eye } from "lucide-react";
 import ReasonModal from "../components/ReasonModal";
 import VendorForm from "../components/VendorForm";
@@ -12,12 +14,18 @@ import DateInput from "../components/DateInput";
 import Pagination from "../components/Pagination";
 import { useDebounce } from "../utils/useDebounce";
 import { ENDPOINTS } from "../config/api";
+import SearchableSelect from "../components/SearchableSelect";
+import {
+  searchVendorsApi,
+  fetchVendorByIdApi,
+  formatVendorOption,
+} from "../utils/selectHelpers";
 
 const Expenses = () => {
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
-  const [expenses, setExpenses] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+
   const [showForm, setShowForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [viewingExpense, setViewingExpense] = useState(null);
@@ -28,8 +36,6 @@ const Expenses = () => {
   const debouncedSearch = useDebounce(search, 350);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalExpenses, setTotalExpenses] = useState(0);
   const [filters, setFilters] = useState({
     category: "all",
     vendor: "all",
@@ -50,71 +56,47 @@ const Expenses = () => {
   const [uploadFile, setUploadFile] = useState(null);
   const [uploading, setUploading] = useState(false);
 
-  const [vendors, setVendors] = useState([]);
-
-  useEffect(() => {
-    fetchVendors();
-  }, [user.token]);
+  const [selectedVendorOpt, setSelectedVendorOpt] = useState(null);
 
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch, filters]);
 
-  useEffect(() => {
-    fetchExpenses();
-  }, [page, pageSize, debouncedSearch, filters, user.token]);
-
-  const fetchVendors = async () => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.get(ENDPOINTS.VENDORS, config);
-      setVendors(data);
-    } catch (error) {
-      console.error("Error fetching vendors:", error);
-    }
+  const queryParams = {
+    page,
+    limit: pageSize,
+    ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+    ...(filters.category !== "all" ? { category: filters.category } : {}),
+    ...(filters.vendor !== "all" ? { vendor: filters.vendor } : {}),
+    ...(filters.startDate ? { startDate: filters.startDate } : {}),
+    ...(filters.endDate ? { endDate: filters.endDate } : {}),
   };
 
-  const fetchExpenses = async () => {
-    try {
-      setLoading(true);
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(pageSize),
+  const {
+    data: expensesData,
+    isLoading,
+    isFetching,
+    error,
+  } = useQuery({
+    queryKey: ["expenses", queryParams],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.EXPENSES, {
+        params: queryParams,
       });
-      if (debouncedSearch && debouncedSearch.trim()) {
-        params.append("search", debouncedSearch.trim());
-      }
-      if (filters.category !== "all")
-        params.append("category", filters.category);
-      if (filters.vendor !== "all") params.append("vendor", filters.vendor);
-      if (filters.startDate) params.append("startDate", filters.startDate);
-      if (filters.endDate) params.append("endDate", filters.endDate);
+      return res.data;
+    },
+    placeholderData: (previousData) => previousData,
+  });
 
-      const expensesRes = await axios.get(
-        `${ENDPOINTS.EXPENSES}?${params.toString()}`,
-        config,
-      );
-
-      const data = expensesRes.data;
-      if (Array.isArray(data)) {
-        setExpenses(data);
-        setTotalExpenses(data.length);
-        setTotalPages(Math.ceil(data.length / pageSize) || 1);
-      } else {
-        setExpenses(data.expenses || data.data || []);
-        setTotalExpenses(data.total || 0);
-        setTotalPages(data.pages || 1);
-      }
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching expenses:", error);
-      setLoading(false);
-    }
-  };
+  const expenses = Array.isArray(expensesData)
+    ? expensesData
+    : expensesData?.data || [];
+  const totalExpenses = Array.isArray(expensesData)
+    ? expensesData.length
+    : expensesData?.total || 0;
+  const totalPages = Array.isArray(expensesData)
+    ? Math.ceil(expensesData.length / pageSize) || 1
+    : expensesData?.pages || 1;
 
   const resetFilters = () => {
     setSearch("");
@@ -136,6 +118,82 @@ const Expenses = () => {
     );
   };
 
+  const createExpenseMutation = useMutation({
+    mutationFn: async (data) => {
+      const res = await apiClient.post(ENDPOINTS.EXPENSES, data);
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success("Expense added successfully");
+      setShowForm(false);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+    },
+    onError: (err) => {
+      console.error("Error creating expense:", err);
+      toast.error(err.response?.data?.message || "Error creating expense");
+    },
+    onSettled: () => {
+      setUploading(false);
+    },
+  });
+
+  const updateExpenseMutation = useMutation({
+    mutationFn: async ({ id, data }) => {
+      const res = await apiClient.put(ENDPOINTS.EXPENSE_BY_ID(id), data);
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success("Expense updated successfully");
+      setShowForm(false);
+      setShowReasonModal(false);
+      setEditingExpense(null);
+      setPendingUpdate(null);
+      resetForm();
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+    },
+    onError: (err) => {
+      console.error("Error updating expense:", err);
+      toast.error(err.response?.data?.message || "Error updating expense");
+    },
+    onSettled: () => {
+      setUploading(false);
+    },
+  });
+
+  const saveVendorMutation = useMutation({
+    mutationFn: async (vendorData) => {
+      const res = await apiClient.post(ENDPOINTS.VENDORS, vendorData);
+      return res.data;
+    },
+    onSuccess: (data) => {
+      toast.success("Vendor created successfully");
+      const opt = formatVendorOption(data);
+      setSelectedVendorOpt(opt);
+      setFormData((prev) => ({ ...prev, vendor: data._id }));
+      setShowVendorModal(false);
+      queryClient.invalidateQueries({ queryKey: ["vendors"] });
+    },
+    onError: (err) => {
+      console.error("Error creating vendor:", err);
+      toast.error(err.response?.data?.message || "Error creating vendor");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id) => {
+      await apiClient.delete(ENDPOINTS.EXPENSE_BY_ID(id));
+    },
+    onSuccess: () => {
+      toast.success("Expense deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+    },
+    onError: (err) => {
+      console.error("Error deleting expense:", err);
+      toast.error(err.response?.data?.message || "Error deleting expense");
+    },
+  });
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -149,145 +207,72 @@ const Expenses = () => {
       if (uploadFile) {
         const formDataUpload = new FormData();
         formDataUpload.append("file", uploadFile);
-        const token = user.token;
-        const config = {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-          },
-        };
-        const uploadRes = await axios.post(
+        const uploadRes = await apiClient.post(
           ENDPOINTS.EXPENSE_UPLOAD,
           formDataUpload,
-          config,
         );
         submissionData.attachmentUrl = uploadRes.data.url;
       }
     } catch (error) {
       console.error("Error uploading file:", error);
-      alert("Error uploading file. Please try again.");
+      toast.error("Error uploading file. Please try again.");
       setUploading(false);
       return;
     }
 
     if (editingExpense) {
-      // For edits, show reason modal
       setPendingUpdate(submissionData);
       setShowReasonModal(true);
     } else {
-      // For new expenses, save directly
-      try {
-        const token = user.token;
-        const config = { headers: { Authorization: `Bearer ${token}` } };
-        await axios.post(ENDPOINTS.EXPENSES, submissionData, config);
-        setShowForm(false);
-        resetForm();
-        fetchExpenses();
-      } catch (error) {
-        console.error("Error creating expense:", error);
-      } finally {
-        setUploading(false);
-      }
+      createExpenseMutation.mutate(submissionData);
     }
   };
 
-  const handleConfirmEdit = async (reason) => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.put(
-        ENDPOINTS.EXPENSE_BY_ID(editingExpense._id),
-        {
-          ...pendingUpdate,
-          editReason: reason,
-          editedBy: user.name,
-        },
-        config,
-      );
-      setShowForm(false);
-      setShowReasonModal(false);
-      setEditingExpense(null);
-      setPendingUpdate(null);
-      resetForm();
-      fetchExpenses();
-    } catch (error) {
-      console.error("Error updating expense:", error);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleSaveVendor = async (vendorData) => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.post(ENDPOINTS.VENDORS, vendorData, config);
-      setVendors([...vendors, data]);
-      setFormData({ ...formData, vendor: data._id });
-      setShowVendorModal(false);
-    } catch (error) {
-      console.error("Error creating vendor:", error);
-      alert("Error creating vendor");
-    }
-  };
-
-  const resetForm = () => {
-    setFormData({
-      description: "",
-      amount: "",
-      category: "General",
-      date: new Date().toISOString().split("T")[0],
-      vendor: "",
-      paymentMethod: "Cash",
-      reference: "",
-      notes: "",
-      attachmentUrl: "",
+  const handleConfirmEdit = (reason) => {
+    updateExpenseMutation.mutate({
+      id: editingExpense._id,
+      data: {
+        ...pendingUpdate,
+        editReason: reason,
+        editedBy: user.name,
+      },
     });
-    setUploadFile(null);
   };
 
-  const handleEdit = (expense) => {
-    setEditingExpense(expense);
-    setFormData({
-      description: expense.description,
-      amount: expense.amount,
-      category: expense.category,
-      date: expense.date.split("T")[0],
-      vendor: expense.vendor?._id || null,
-      paymentMethod: expense.paymentMethod || "Cash",
-      reference: expense.reference || "",
-      notes: expense.notes || "",
-      attachmentUrl: expense.attachmentUrl || "",
-    });
-    setUploadFile(null);
-    setShowForm(true);
+  const handleSaveVendor = (vendorData) => {
+    saveVendorMutation.mutate(vendorData);
   };
 
-  const handleCancelEdit = () => {
-    setShowForm(false);
-    setEditingExpense(null);
-    resetForm();
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this expense?"))
-      return;
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.delete(ENDPOINTS.EXPENSE_BY_ID(id), config);
-      fetchExpenses();
-    } catch (error) {
-      console.error("Error deleting expense:", error);
+  const handleDelete = (id) => {
+    if (window.confirm("Are you sure you want to delete this expense?")) {
+      deleteMutation.mutate(id);
     }
   };
 
-  if (loading) return <div className="text-white">Loading expenses...</div>;
+  if (isLoading) return <div className="text-white">Loading expenses...</div>;
+
+  if (error && !expensesData) {
+    return (
+      <div className="p-6 bg-red-900/20 border border-red-800 text-red-400 rounded-lg">
+        <p className="font-semibold">Failed to load expenses</p>
+        <p className="text-sm mt-1">
+          {error.response?.data?.message || error.message}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-white">Expenses</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white">Expenses</h1>
+          {isFetching && !isLoading && (
+            <span className="text-xs text-blue-400 bg-blue-950/60 border border-blue-800/60 px-2 py-0.5 rounded animate-pulse">
+              Refreshing...
+            </span>
+          )}
+        </div>
         <button
           onClick={() => setShowForm(true)}
           className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
@@ -327,20 +312,19 @@ const Expenses = () => {
 
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-400">Vendor:</label>
-            <select
+            <SearchableSelect
               value={filters.vendor}
-              onChange={(e) =>
-                setFilters({ ...filters, vendor: e.target.value })
+              onChange={(val) =>
+                setFilters({ ...filters, vendor: val || "all" })
               }
-              className="bg-slate-950 border border-slate-700 text-white rounded px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
-            >
-              <option value="all">All Vendors</option>
-              {vendors.map((vendor) => (
-                <option key={vendor._id} value={vendor._id}>
-                  {vendor.name}
-                </option>
-              ))}
-            </select>
+              loadOptions={(q) => searchVendorsApi(user.token, q, 10)}
+              fixedOptions={[{ value: "all", label: "All Vendors" }]}
+              placeholder="All Vendors"
+              searchPlaceholder="Search vendors..."
+              isClearable={false}
+              className="w-48"
+              buttonClassName="py-1 px-3 text-sm h-8"
+            />
           </div>
 
           <div className="flex items-center gap-2">
@@ -470,24 +454,29 @@ const Expenses = () => {
                     Vendor
                   </label>
                   <div className="flex gap-2">
-                    <select
+                    <SearchableSelect
                       value={formData.vendor}
-                      onChange={(e) =>
-                        setFormData({ ...formData, vendor: e.target.value })
+                      onChange={(val, opt) => {
+                        setFormData({ ...formData, vendor: val });
+                        setSelectedVendorOpt(opt);
+                      }}
+                      loadOptions={(q) => searchVendorsApi(user.token, q, 10)}
+                      fetchOptionById={(id) => fetchVendorByIdApi(user.token, id)}
+                      selectedOption={selectedVendorOpt}
+                      initialLabel={
+                        editingExpense?.vendor?.name ||
+                        selectedVendorOpt?.label ||
+                        ""
                       }
-                      className="w-full bg-slate-950 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-                    >
-                      <option value="">Select Vendor</option>
-                      {vendors.map((vendor) => (
-                        <option key={vendor._id} value={vendor._id}>
-                          {vendor.name}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Select Vendor"
+                      searchPlaceholder="Search vendors by name, email, phone..."
+                      isClearable
+                      className="flex-1"
+                    />
                     <button
                       type="button"
                       onClick={() => setShowVendorModal(true)}
-                      className="bg-slate-800 hover:bg-slate-700 text-white rounded px-3 border border-slate-700"
+                      className="bg-slate-800 hover:bg-slate-700 text-white rounded px-3 border border-slate-700 shrink-0"
                       title="Add New Vendor"
                     >
                       <Plus className="h-5 w-5" />
@@ -654,7 +643,7 @@ const Expenses = () => {
             ))}
           </tbody>
         </table>
-        {expenses.length === 0 && !loading && (
+        {expenses.length === 0 && !isLoading && (
           <div className="p-6 text-center text-slate-500">
             No expenses recorded. Try adjusting your search or filters.
           </div>

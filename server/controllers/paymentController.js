@@ -153,7 +153,6 @@ const getPayments = async (req, res) => {
       .skip(perPage * (currentPage - 1));
 
     res.json({
-      payments,
       data: payments,
       total: count,
       page: currentPage,

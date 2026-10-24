@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
-import axios from "axios";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { Link } from "react-router-dom";
 import { ENDPOINTS } from "../config/api";
 import {
@@ -18,6 +19,7 @@ import { formatCurrency } from "../utils/currency";
 import { formatDate } from "../utils/date";
 import { Calendar, Download, Filter, FileText } from "lucide-react";
 import DateInput from "../components/DateInput";
+import toast from "react-hot-toast";
 
 const CustomLegend = ({ payload }) => {
   if (!payload) return null;
@@ -73,89 +75,103 @@ const CustomTooltip = ({ active, payload, label, settings }) => {
 };
 
 const Reports = () => {
-  const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
   const [activeTab, setActiveTab] = useState("sales"); // 'sales' or 'profit-loss'
-  const [stats, setStats] = useState(null);
-  const [salesData, setSalesData] = useState(null);
-  const [profitLossData, setProfitLossData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState("monthly");
   const [dateRange, setDateRange] = useState({
     startDate: "",
     endDate: "",
   });
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const token = user.token;
-        const config = {
-          headers: { Authorization: `Bearer ${token}` },
-          params: {
-            timeframe,
-            startDate: dateRange.startDate,
-            endDate: dateRange.endDate,
-          },
-        };
+  const queryParams = {
+    timeframe,
+    startDate: dateRange.startDate || undefined,
+    endDate: dateRange.endDate || undefined,
+  };
 
-        if (activeTab === "sales") {
-          const [salesRes, statsRes] = await Promise.all([
-            axios.get(ENDPOINTS.REPORTS_SALES, config),
-            axios.get(ENDPOINTS.REPORTS_DASHBOARD, config),
-          ]);
-          setSalesData(salesRes.data);
-          setStats(statsRes.data);
-        } else {
-          const res = await axios.get(ENDPOINTS.REPORTS_PROFIT_LOSS, config);
-          setProfitLossData(res.data);
-          setStats(res.data.summary);
-        }
-        setLoading(false);
-      } catch (error) {
-        console.error("Error fetching reports:", error);
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [user.token, timeframe, dateRange, activeTab]);
+  const {
+    data: salesResult,
+    isLoading: loadingSales,
+    isFetching: isFetchingSales,
+  } = useQuery({
+    queryKey: ["reportsSales", queryParams],
+    queryFn: async () => {
+      const [salesRes, statsRes] = await Promise.all([
+        apiClient.get(ENDPOINTS.REPORTS_SALES, { params: queryParams }),
+        apiClient.get(ENDPOINTS.REPORTS_DASHBOARD, { params: queryParams }),
+      ]);
+      return {
+        salesData: salesRes.data,
+        stats: statsRes.data,
+      };
+    },
+    enabled: activeTab === "sales",
+    placeholderData: (previousData) => previousData,
+  });
 
-  const handleDownloadPDF = async () => {
-    try {
-      const token = user.token;
+  const {
+    data: profitLossResult,
+    isLoading: loadingProfitLoss,
+    isFetching: isFetchingProfitLoss,
+  } = useQuery({
+    queryKey: ["reportsProfitLoss", queryParams],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.REPORTS_PROFIT_LOSS, {
+        params: queryParams,
+      });
+      return {
+        profitLossData: res.data,
+        stats: res.data?.summary,
+      };
+    },
+    enabled: activeTab === "profit-loss",
+    placeholderData: (previousData) => previousData,
+  });
+
+  const loading = activeTab === "sales" ? loadingSales : loadingProfitLoss;
+  const isFetching = activeTab === "sales" ? isFetchingSales : isFetchingProfitLoss;
+  const stats = activeTab === "sales" ? salesResult?.stats : profitLossResult?.stats;
+  const salesData = salesResult?.salesData;
+  const profitLossData = profitLossResult?.profitLossData;
+
+  const downloadPdfMutation = useMutation({
+    mutationFn: async () => {
       const endpoint =
         activeTab === "sales"
           ? ENDPOINTS.PDF_SALES_REPORT
           : ENDPOINTS.PDF_PROFIT_LOSS_REPORT;
-      const response = await axios.post(
+      const response = await apiClient.post(
         endpoint,
         {
           timeframe,
           startDate: dateRange.startDate,
           endDate: dateRange.endDate,
         },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          responseType: "blob",
-        },
+        { responseType: "blob" }
       );
-
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      return response.data;
+    },
+    onSuccess: (data) => {
+      const url = window.URL.createObjectURL(new Blob([data]));
       const link = document.createElement("a");
       link.href = url;
       link.setAttribute(
         "download",
-        `${activeTab === "sales" ? "Sales" : "Profit_Loss"
-        }_Report_${timeframe}.pdf`,
+        `${activeTab === "sales" ? "Sales" : "Profit_Loss"}_Report_${timeframe}.pdf`
       );
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch (error) {
+      toast.success("PDF report downloaded");
+    },
+    onError: (error) => {
       console.error("Error downloading PDF:", error);
-      alert("Failed to download report PDF");
-    }
+      toast.error("Failed to download report PDF");
+    },
+  });
+
+  const handleDownloadPDF = () => {
+    downloadPdfMutation.mutate();
   };
 
   if (loading && !stats)
@@ -164,13 +180,23 @@ const Reports = () => {
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold text-white">Financial Reports</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white">Financial Reports</h1>
+          {isFetching && !loading && (
+            <span className="text-xs text-blue-400 animate-pulse bg-blue-500/10 px-2 py-0.5 rounded">
+              Updating...
+            </span>
+          )}
+        </div>
         <button
           onClick={handleDownloadPDF}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+          disabled={downloadPdfMutation.isPending}
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium disabled:opacity-50"
         >
           <Download size={18} />
-          Download {activeTab === "sales" ? "Sales" : "P&L"} PDF
+          {downloadPdfMutation.isPending
+            ? "Downloading..."
+            : `Download ${activeTab === "sales" ? "Sales" : "P&L"} PDF`}
         </button>
       </div>
 
@@ -179,8 +205,8 @@ const Reports = () => {
         <button
           onClick={() => setActiveTab("sales")}
           className={`px-6 py-3 text-sm font-medium transition-colors relative ${activeTab === "sales"
-              ? "text-blue-500"
-              : "text-slate-400 hover:text-slate-200"
+            ? "text-blue-500"
+            : "text-slate-400 hover:text-slate-200"
             }`}
         >
           Sales Report
@@ -191,8 +217,8 @@ const Reports = () => {
         <button
           onClick={() => setActiveTab("profit-loss")}
           className={`px-6 py-3 text-sm font-medium transition-colors relative ${activeTab === "profit-loss"
-              ? "text-blue-500"
-              : "text-slate-400 hover:text-slate-200"
+            ? "text-blue-500"
+            : "text-slate-400 hover:text-slate-200"
             }`}
         >
           Profit & Loss

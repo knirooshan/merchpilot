@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { toast } from "react-hot-toast";
 import { Save, Server, Globe } from "lucide-react";
 import { ENDPOINTS } from "../config/api";
 
 const AdminSettings = () => {
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     smtp: {
       host: "",
@@ -23,40 +23,47 @@ const AdminSettings = () => {
     },
   });
 
-  const fetchSettings = async () => {
-    try {
-      const token = localStorage.getItem("token");
-      const { data } = await axios.get(ENDPOINTS.ADMIN_SETTINGS, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      // ... rest of function
-      // Merge with defaults to avoid null issues
-      setFormData({
-        smtp: {
-          host: data.smtp?.host || "",
-          port: data.smtp?.port || 587,
-          user: data.smtp?.user || "",
-          pass: data.smtp?.pass || "",
-          secure: data.smtp?.secure || false,
-          fromName: data.smtp?.fromName || "",
-          fromEmail: data.smtp?.fromEmail || "",
-        },
-        general: {
-          appName: data.general?.appName || "",
-          supportEmail: data.general?.supportEmail || "",
-        },
-      });
-    } catch (error) {
-      console.error("Failed to load settings", error);
-      toast.error("Failed to load settings");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: adminSettingsData, isLoading: loading } = useQuery({
+    queryKey: ["adminSettings"],
+    queryFn: async () => {
+      const { data } = await apiClient.get(ENDPOINTS.ADMIN_SETTINGS);
+      return data;
+    },
+  });
 
   useEffect(() => {
-    fetchSettings();
-  }, []);
+    if (adminSettingsData) {
+      setFormData({
+        smtp: {
+          host: adminSettingsData.smtp?.host || "",
+          port: adminSettingsData.smtp?.port || 587,
+          user: adminSettingsData.smtp?.user || "",
+          pass: adminSettingsData.smtp?.pass || "",
+          secure: adminSettingsData.smtp?.secure || false,
+          fromName: adminSettingsData.smtp?.fromName || "",
+          fromEmail: adminSettingsData.smtp?.fromEmail || "",
+        },
+        general: {
+          appName: adminSettingsData.general?.appName || "",
+          supportEmail: adminSettingsData.general?.supportEmail || "",
+        },
+      });
+    }
+  }, [adminSettingsData]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data) => {
+      const res = await apiClient.put(ENDPOINTS.ADMIN_SETTINGS, data);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["adminSettings"] });
+      toast.success("Settings saved successfully");
+    },
+    onError: () => {
+      toast.error("Failed to save settings");
+    },
+  });
 
   const handleChange = (section, field, value) => {
     setFormData((prev) => ({
@@ -68,21 +75,12 @@ const AdminSettings = () => {
     }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setSaving(true);
-    try {
-      const token = localStorage.getItem("token");
-      await axios.put(ENDPOINTS.ADMIN_SETTINGS, formData, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      toast.success("Settings saved successfully");
-    } catch {
-      toast.error("Failed to save settings");
-    } finally {
-      setSaving(false);
-    }
+    saveMutation.mutate(formData);
   };
+
+  const saving = saveMutation.isPending;
 
   if (loading) return <div className="text-white p-8">Loading settings...</div>;
 

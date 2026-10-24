@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Plus, Trash, Save, Edit2 } from "lucide-react";
@@ -15,15 +16,21 @@ import CurrencySelector from "../components/CurrencySelector";
 import DateInput from "../components/DateInput";
 import RichTextEditor from "../components/RichTextEditor";
 import ItemModal from "../components/ItemModal";
+import SearchableSelect from "../components/SearchableSelect";
+import {
+  searchCustomersApi,
+  fetchCustomerByIdApi,
+  formatCustomerOption,
+} from "../utils/selectHelpers";
+import toast from "react-hot-toast";
 
 const CreateInvoice = () => {
+  const queryClient = useQueryClient();
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
   const navigate = useNavigate();
   const location = useLocation();
-  const [customers, setCustomers] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [selectedCustomerOpt, setSelectedCustomerOpt] = useState(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showItemModal, setShowItemModal] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState(null);
@@ -49,6 +56,15 @@ const CreateInvoice = () => {
     invoiceType: "tax",
   });
 
+  const { data: productsData, isLoading: loading } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.PRODUCTS);
+      return Array.isArray(res.data) ? res.data : res.data?.data || [];
+    },
+  });
+  const products = productsData || [];
+
   useEffect(() => {
     if (settings) {
       setFormData((prev) => ({
@@ -67,98 +83,77 @@ const CreateInvoice = () => {
   }, [settings]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const token = user.token;
-        const config = { headers: { Authorization: `Bearer ${token}` } };
-        const [custRes, prodRes] = await Promise.all([
-          axios.get(ENDPOINTS.CUSTOMERS, config),
-          axios.get(ENDPOINTS.PRODUCTS, config),
-        ]);
-        setCustomers(custRes.data);
-        setProducts(prodRes.data);
+    if (location.state?.quotationData && products.length > 0) {
+      const {
+        customer,
+        items,
+        discount,
+        notes,
+        deliveryNote,
+        deliveryCharge,
+        currency: quotationCurrency,
+        exchangeRate: quotationExchangeRate,
+      } = location.state.quotationData;
 
-        // Check for quotation data passed via navigation
-        if (location.state?.quotationData) {
-          const {
-            customer,
-            items,
-            discount,
-            notes,
-            deliveryNote,
-            deliveryCharge,
+      if (customer) {
+        setSelectedCustomerOpt(formatCustomerOption(customer));
+      }
+
+      const defaultTaxRate = settings?.tax?.rate || 0;
+
+      setFormData((prev) => ({
+        ...prev,
+        customer: customer?._id || "",
+        items: (items || []).map((item) => {
+          const productId = item.product?._id || item.product;
+          const matchedProduct = productId
+            ? products.find(
+              (p) => p._id.toString() === productId.toString(),
+            )
+            : null;
+
+          return {
+            product: matchedProduct?._id || null,
+            name: item.name,
+            description: item.description || "",
+            sku: item.sku || "",
+            price: item.price,
+            quantity: item.quantity,
+            discount: item.discount || 0,
+            discountType: item.discountType || "fixed",
+            isTaxable: item.isTaxable ?? false,
+            taxMethod:
+              item.taxMethod || settings?.tax?.defaultMethod || "exclusive",
+            itemTax: item.itemTax || 0,
+            total: item.total,
+          };
+        }),
+        notes: notes || "",
+        terms: settings?.terms?.invoice || "",
+        deliveryNote:
+          deliveryNote || settings?.terms?.deliveryReceipt || "",
+        taxRate: defaultTaxRate,
+        discount: discount || 0,
+        deliveryCharge: deliveryCharge || 0,
+      }));
+
+      if (
+        isForeignCurrency(
+          {
             currency: quotationCurrency,
             exchangeRate: quotationExchangeRate,
-          } = location.state.quotationData;
-
-          // Calculate tax rate from tax amount if possible, or use default
-          // Since we store tax amount, we might need to infer rate or just use default
-          // For now, let's use the default tax rate from settings, or 0
-          const defaultTaxRate = settings?.tax?.rate || 0;
-
-          setFormData((prev) => ({
-            ...prev,
-            customer: customer._id,
-            items: items.map((item) => {
-              // Find matching product in products array
-              const productId = item.product?._id || item.product;
-              const matchedProduct = productId
-                ? prodRes.data.find(
-                  (p) => p._id.toString() === productId.toString(),
-                )
-                : null;
-
-              return {
-                product: matchedProduct?._id || null,
-                name: item.name,
-                description: item.description || "",
-                sku: item.sku || "",
-                price: item.price,
-                quantity: item.quantity,
-                discount: item.discount || 0,
-                discountType: item.discountType || "fixed",
-                isTaxable: item.isTaxable ?? false,
-                taxMethod:
-                  item.taxMethod || settings?.tax?.defaultMethod || "exclusive",
-                itemTax: item.itemTax || 0,
-                total: item.total,
-              };
-            }),
-            notes: notes || "",
-            terms: settings?.terms?.invoice || "",
-            deliveryNote:
-              deliveryNote || settings?.terms?.deliveryReceipt || "",
-            taxRate: defaultTaxRate,
-            discount: discount || 0,
-            deliveryCharge: deliveryCharge || 0,
-          }));
-
-          // Carry over currency from quotation (only if foreign)
-          if (
-            isForeignCurrency(
-              {
-                currency: quotationCurrency,
-                exchangeRate: quotationExchangeRate,
-              },
-              settings,
-            )
-          ) {
-            setCurrency(quotationCurrency);
-            setExchangeRate(quotationExchangeRate || null);
-          } else {
-            setCurrency(null);
-            setExchangeRate(null);
-          }
-        }
-
-        setLoading(false);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        setLoading(false);
+          },
+          settings,
+        )
+      ) {
+        setCurrency(quotationCurrency);
+        setExchangeRate(quotationExchangeRate || null);
+      } else {
+        setCurrency(null);
+        setExchangeRate(null);
       }
-    };
-    fetchData();
-  }, [user.token, location.state, settings]);
+    }
+  }, [location.state, products, settings]);
 
   const addItem = (item) => {
     if (editingItemIndex !== null) {
@@ -193,50 +188,62 @@ const CreateInvoice = () => {
     );
   };
 
-  const handleSubmit = async (e) => {
+  const createInvoiceMutation = useMutation({
+    mutationFn: async (payload) => {
+      const { data } = await apiClient.post(ENDPOINTS.INVOICES, payload);
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["outstandingInvoices"] });
+      queryClient.invalidateQueries({ queryKey: ["deliveryQueue"] });
+      toast.success("Invoice created successfully");
+      navigate(`/invoices/${data._id}`);
+    },
+    onError: (error) => {
+      console.error("Error creating invoice:", error);
+      toast.error(error.response?.data?.message || "Error creating invoice");
+    },
+  });
+
+  const createCustomerMutation = useMutation({
+    mutationFn: async (customerData) => {
+      const { data } = await apiClient.post(ENDPOINTS.CUSTOMERS, customerData);
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      const opt = formatCustomerOption(data);
+      setSelectedCustomerOpt(opt);
+      setFormData((prev) => ({ ...prev, customer: data._id }));
+      setShowCustomerModal(false);
+      toast.success("Customer created successfully");
+    },
+    onError: (error) => {
+      console.error("Error creating customer:", error);
+      toast.error(error.response?.data?.message || "Error creating customer");
+    },
+  });
+
+  const handleSubmit = (e) => {
     e.preventDefault();
     const totals = calculateTotals();
-
     const isForeign = isForeignCurrency({ currency, exchangeRate }, settings);
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.post(
-        ENDPOINTS.INVOICES,
-        {
-          ...formData,
-          items: totals.itemsWithTax,
-          subtotal: totals.subtotal,
-          tax: totals.tax,
-          taxRate: formData.taxRate,
-          total: totals.total,
-          currency: isForeign ? currency : undefined,
-          exchangeRate: isForeign ? exchangeRate : undefined,
-        },
-        config,
-      );
-      navigate(`/invoices/${data._id}`);
-    } catch (error) {
-      console.error("Error creating invoice:", error);
-    }
+
+    createInvoiceMutation.mutate({
+      ...formData,
+      items: totals.itemsWithTax,
+      subtotal: totals.subtotal,
+      tax: totals.tax,
+      taxRate: formData.taxRate,
+      total: totals.total,
+      currency: isForeign ? currency : undefined,
+      exchangeRate: isForeign ? exchangeRate : undefined,
+    });
   };
 
-  const handleSaveCustomer = async (customerData) => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.post(
-        ENDPOINTS.CUSTOMERS,
-        customerData,
-        config,
-      );
-      setCustomers([...customers, data]);
-      setFormData({ ...formData, customer: data._id });
-      setShowCustomerModal(false);
-    } catch (error) {
-      console.error("Error creating customer:", error);
-      alert("Error creating customer");
-    }
+  const handleSaveCustomer = (customerData) => {
+    createCustomerMutation.mutate(customerData);
   };
 
   const { subtotal, tax, total } = calculateTotals();
@@ -257,24 +264,20 @@ const CreateInvoice = () => {
                 Select Customer
               </label>
               <div className="flex gap-2">
-                <select
+                <SearchableSelect
                   value={formData.customer}
-                  onChange={(e) =>
-                    setFormData({ ...formData, customer: e.target.value })
-                  }
-                  className="block w-full bg-slate-950 border border-slate-700 text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  onChange={(val, opt) => {
+                    setFormData({ ...formData, customer: val });
+                    setSelectedCustomerOpt(opt);
+                  }}
+                  loadOptions={(q) => searchCustomersApi(user.token, q, 10)}
+                  fetchOptionById={(id) => fetchCustomerByIdApi(user.token, id)}
+                  selectedOption={selectedCustomerOpt}
+                  placeholder="Select a customer..."
+                  searchPlaceholder="Search customers by name, email, phone, company..."
                   required
-                >
-                  <option value="">Select a customer...</option>
-                  {customers.map((c) => (
-                    <option key={c._id} value={c._id}>
-                      {c.firstName || c.lastName
-                        ? `${c.firstName || ""} ${c.lastName || ""}`.trim()
-                        : c.billing?.company || "Unnamed"}{" "}
-                      ({c.email || "-"})
-                    </option>
-                  ))}
-                </select>
+                  className="flex-1"
+                />
                 <button
                   type="button"
                   onClick={() => setShowCustomerModal(true)}
@@ -595,10 +598,11 @@ const CreateInvoice = () => {
         <div className="flex justify-end">
           <button
             type="submit"
-            className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-sm font-medium"
+            disabled={createInvoiceMutation.isPending}
+            className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-sm font-medium transition-colors disabled:opacity-50"
           >
             <Save className="mr-2 h-5 w-5" />
-            Save Invoice
+            {createInvoiceMutation.isPending ? "Saving..." : "Save Invoice"}
           </button>
         </div>
       </form>

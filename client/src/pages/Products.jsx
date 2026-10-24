@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import {
   RefreshCw,
@@ -11,26 +12,22 @@ import {
   Upload,
 } from "lucide-react";
 import { useSelector } from "react-redux";
+import toast from "react-hot-toast";
 import { formatCurrency } from "../utils/currency";
 import ProductForm from "../components/ProductForm";
 import Pagination from "../components/Pagination";
 import { useDebounce } from "../utils/useDebounce";
 
 const Products = () => {
-  const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [pushingMedusa, setPushingMedusa] = useState(false);
+  const queryClient = useQueryClient();
+
   const [pushingProductId, setPushingProductId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearch = useDebounce(searchTerm, 350);
   const [sortBy, setSortBy] = useState("createdAt_desc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalProducts, setTotalProducts] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
 
@@ -39,58 +36,164 @@ const Products = () => {
     setPage(1);
   }, [debouncedSearch, sortBy]);
 
-  useEffect(() => {
-    fetchProducts();
-  }, [page, pageSize, debouncedSearch, sortBy]);
+  const queryParams = {
+    page,
+    limit: pageSize,
+    sortBy,
+    ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+  };
 
-  const fetchProducts = async () => {
-    try {
-      setLoading(true);
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(pageSize),
-        sortBy,
+  const {
+    data: productsData,
+    isLoading,
+    isFetching,
+    error,
+  } = useQuery({
+    queryKey: ["products", queryParams],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.PRODUCTS, {
+        params: queryParams,
       });
-      if (debouncedSearch && debouncedSearch.trim()) {
-        params.append("search", debouncedSearch.trim());
-      }
+      return res.data;
+    },
+    placeholderData: (previousData) => previousData,
+  });
 
-      const { data } = await axios.get(
-        `${ENDPOINTS.PRODUCTS}?${params.toString()}`,
-        config,
+  const products = Array.isArray(productsData)
+    ? productsData
+    : productsData?.data || [];
+  const totalProducts = Array.isArray(productsData)
+    ? productsData.length
+    : productsData?.total || 0;
+  const totalPages = Array.isArray(productsData)
+    ? Math.ceil(productsData.length / pageSize) || 1
+    : productsData?.pages || 1;
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      await apiClient.post(ENDPOINTS.PRODUCTS_SYNC, {});
+    },
+    onSuccess: () => {
+      toast.success("Products synced successfully");
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+    onError: (err) => {
+      console.error("Error syncing products:", err);
+      toast.error(err.response?.data?.message || "Error syncing products");
+    },
+  });
+
+  const pushMedusaMutation = useMutation({
+    mutationFn: async (id) => {
+      setPushingProductId(id);
+      const res = await apiClient.post(ENDPOINTS.PRODUCT_PUSH_MEDUSA(id), {});
+      return res.data;
+    },
+    onSuccess: (data) => {
+      toast.success(`Pushed to Medusa! ID: ${data.medusaId}`);
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+    onError: (err) => {
+      console.error("Medusa push error:", err);
+      toast.error(err.response?.data?.message || "Error pushing to Medusa");
+    },
+    onSettled: () => {
+      setPushingProductId(null);
+    },
+  });
+
+  const pushAllMedusaMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.post(ENDPOINTS.PRODUCTS_PUSH_MEDUSA_ALL, {});
+      return res.data;
+    },
+    onSuccess: (data) => {
+      toast.success(data.message || "All products pushed to Medusa");
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+    onError: (err) => {
+      console.error("Medusa bulk push error:", err);
+      toast.error(
+        err.response?.data?.message || "Error pushing products to Medusa",
       );
+    },
+  });
 
-      if (Array.isArray(data)) {
-        setProducts(data);
-        setTotalProducts(data.length);
-        setTotalPages(Math.ceil(data.length / pageSize) || 1);
-      } else {
-        setProducts(data.products || data.data || []);
-        setTotalProducts(data.total || 0);
-        setTotalPages(data.pages || 1);
+  const toggleMedusaSyncMutation = useMutation({
+    mutationFn: async (id) => {
+      const res = await apiClient.patch(
+        ENDPOINTS.PRODUCT_TOGGLE_MEDUSA_SYNC(id),
+        {},
+      );
+      return { id, data: res.data };
+    },
+    onSuccess: () => {
+      toast.success("Medusa sync updated");
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+    onError: (err) => {
+      console.error("Toggle error:", err);
+      toast.error(err.response?.data?.message || "Failed to update sync flag");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id) => {
+      await apiClient.delete(ENDPOINTS.PRODUCT_BY_ID(id));
+    },
+    onSuccess: () => {
+      toast.success("Product deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+    onError: (err) => {
+      console.error("Error deleting product:", err);
+      toast.error(err.response?.data?.message || "Error deleting product");
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (productData) => {
+      if (editingProduct) {
+        return apiClient.put(
+          ENDPOINTS.PRODUCT_BY_ID(editingProduct._id),
+          productData,
+        );
       }
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching products:", error);
-      setLoading(false);
-    }
-  };
+      return apiClient.post(ENDPOINTS.PRODUCTS, productData);
+    },
+    onSuccess: () => {
+      toast.success(
+        editingProduct
+          ? "Product updated successfully"
+          : "Product created successfully",
+      );
+      setShowForm(false);
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+    onError: (err) => {
+      console.error("Error saving product:", err);
+      toast.error(err.response?.data?.message || "Error saving product");
+    },
+  });
 
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.post(ENDPOINTS.PRODUCTS_SYNC, {}, config);
-      await fetchProducts(); // Refresh list
-    } catch (error) {
-      console.error("Error syncing products:", error);
-    } finally {
-      setSyncing(false);
+  const handleSync = () => syncMutation.mutate();
+  const handlePushToMedusa = (id) => pushMedusaMutation.mutate(id);
+  const handlePushAllToMedusa = () => {
+    if (
+      window.confirm(
+        "Push all Medusa-enabled products to your storefront? Only products with the Medusa sync toggle ON will be pushed.",
+      )
+    ) {
+      pushAllMedusaMutation.mutate();
     }
   };
+  const handleToggleMedusaSync = (id) => toggleMedusaSyncMutation.mutate(id);
+  const handleDelete = (id) => {
+    if (window.confirm("Are you sure you want to delete this product?")) {
+      deleteMutation.mutate(id);
+    }
+  };
+  const handleSave = (productData) => saveMutation.mutate(productData);
 
   const handleAdd = () => {
     setEditingProduct(null);
@@ -102,121 +205,30 @@ const Products = () => {
     setShowForm(true);
   };
 
-  const handlePushToMedusa = async (id) => {
-    setPushingProductId(id);
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.post(
-        ENDPOINTS.PRODUCT_PUSH_MEDUSA(id),
-        {},
-        config,
-      );
-      alert(`Pushed to Medusa! ID: ${data.medusaId}`);
-      await fetchProducts();
-    } catch (error) {
-      console.error("Medusa push error:", error);
-      alert(error.response?.data?.message || "Error pushing to Medusa");
-    } finally {
-      setPushingProductId(null);
-    }
-  };
+  if (isLoading) return <div className="text-white">Loading products...</div>;
 
-  const handlePushAllToMedusa = async () => {
-    if (
-      !window.confirm(
-        "Push all Medusa-enabled products to your storefront? Only products with the Medusa sync toggle ON will be pushed.",
-      )
-    )
-      return;
-    setPushingMedusa(true);
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.post(
-        ENDPOINTS.PRODUCTS_PUSH_MEDUSA_ALL,
-        {},
-        config,
-      );
-      alert(data.message);
-      await fetchProducts();
-    } catch (error) {
-      console.error("Medusa bulk push error:", error);
-      alert(
-        error.response?.data?.message || "Error pushing products to Medusa",
-      );
-    } finally {
-      setPushingMedusa(false);
-    }
-  };
-
-  const handleToggleMedusaSync = async (id) => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.patch(
-        ENDPOINTS.PRODUCT_TOGGLE_MEDUSA_SYNC(id),
-        {},
-        config,
-      );
-      setProducts((prev) =>
-        prev.map((p) =>
-          p._id === id ? { ...p, syncToMedusa: data.syncToMedusa } : p,
-        ),
-      );
-    } catch (error) {
-      console.error("Toggle error:", error);
-      alert(error.response?.data?.message || "Failed to update sync flag");
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to delete this product?")) {
-      try {
-        const token = user.token;
-        const config = { headers: { Authorization: `Bearer ${token}` } };
-        await axios.delete(ENDPOINTS.PRODUCT_BY_ID(id), config);
-        await fetchProducts();
-      } catch (error) {
-        console.error("Error deleting product:", error);
-        alert("Error deleting product");
-      }
-    }
-  };
-
-  const handleSave = async (productData) => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-
-      if (editingProduct) {
-        await axios.put(
-          ENDPOINTS.PRODUCT_BY_ID(editingProduct._id),
-          productData,
-          config,
-        );
-      } else {
-        await axios.post(
-          ENDPOINTS.PRODUCTS,
-          productData,
-          config,
-        );
-      }
-      setShowForm(false);
-      await fetchProducts();
-    } catch (error) {
-      console.error("Error saving product:", error);
-      alert("Error saving product");
-    }
-  };
-
-  if (loading && products.length === 0)
-    return <div className="text-white">Loading products...</div>;
+  if (error && !productsData) {
+    return (
+      <div className="p-6 bg-red-900/20 border border-red-800 text-red-400 rounded-lg">
+        <p className="font-semibold">Failed to load products</p>
+        <p className="text-sm mt-1">
+          {error.response?.data?.message || error.message}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-        <h1 className="text-2xl font-bold text-white">Products</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white">Products</h1>
+          {isFetching && !isLoading && (
+            <span className="text-xs text-blue-400 bg-blue-950/60 border border-blue-800/60 px-2 py-0.5 rounded animate-pulse">
+              Refreshing...
+            </span>
+          )}
+        </div>
         <div className="flex gap-2">
           <button
             onClick={handleAdd}
@@ -228,25 +240,25 @@ const Products = () => {
           {!(settings?.modules?.woocommerce === false) && (
             <button
               onClick={handleSync}
-              disabled={syncing}
+              disabled={syncMutation.isPending}
               className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
               <RefreshCw
-                className={`mr-2 h-5 w-5 ${syncing ? "animate-spin" : ""}`}
+                className={`mr-2 h-5 w-5 ${syncMutation.isPending ? "animate-spin" : ""}`}
               />
-              {syncing ? "Syncing..." : "Sync from WooCommerce"}
+              {syncMutation.isPending ? "Syncing..." : "Sync from WooCommerce"}
             </button>
           )}
           {settings?.modules?.medusaSync && (
             <button
               onClick={handlePushAllToMedusa}
-              disabled={pushingMedusa}
+              disabled={pushAllMedusaMutation.isPending}
               className="flex items-center px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 transition-colors"
             >
               <Upload
-                className={`mr-2 h-5 w-5 ${pushingMedusa ? "animate-pulse" : ""}`}
+                className={`mr-2 h-5 w-5 ${pushAllMedusaMutation.isPending ? "animate-pulse" : ""}`}
               />
-              {pushingMedusa
+              {pushAllMedusaMutation.isPending
                 ? "Pushing..."
                 : `Push Enabled to Medusa (${products.filter((p) => p.syncToMedusa).length})`}
             </button>
@@ -351,9 +363,9 @@ const Products = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
                       className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${product.status === "publish" ||
-                          product.status === "published"
-                          ? "bg-green-900/50 text-green-400 border border-green-800"
-                          : "bg-slate-800 text-slate-400 border border-slate-700"
+                        product.status === "published"
+                        ? "bg-green-900/50 text-green-400 border border-green-800"
+                        : "bg-slate-800 text-slate-400 border border-slate-700"
                         }`}
                     >
                       {product.status.charAt(0).toUpperCase() +
@@ -413,7 +425,8 @@ const Products = () => {
                     )}
                     <button
                       onClick={() => handleDelete(product._id)}
-                      className="text-red-400 hover:text-red-300"
+                      disabled={deleteMutation.isPending}
+                      className="text-red-400 hover:text-red-300 disabled:opacity-50"
                     >
                       <Trash size={18} />
                     </button>
@@ -423,7 +436,7 @@ const Products = () => {
             </tbody>
           </table>
         </div>
-        {products.length === 0 && !loading && (
+        {products.length === 0 && !isLoading && (
           <div className="p-6 text-center text-slate-500">
             No products found. Try adjusting your search or adding a new product.
           </div>

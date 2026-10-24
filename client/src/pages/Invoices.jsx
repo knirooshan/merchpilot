@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import {
   Plus,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
+import toast from "react-hot-toast";
 import { formatCurrency } from "../utils/currency";
 import { formatDate } from "../utils/date";
 import PaymentModal from "../components/PaymentModal";
@@ -39,8 +41,8 @@ const Invoices = () => {
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
   const navigate = useNavigate();
-  const [invoices, setInvoices] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
@@ -50,60 +52,94 @@ const Invoices = () => {
   const debouncedSearch = useDebounce(search, 350);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalInvoices, setTotalInvoices] = useState(0);
   const [filters, setFilters] = useState({
     status: "all",
     startDate: "",
     endDate: "",
   });
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(pageSize),
-      });
-      if (debouncedSearch && debouncedSearch.trim()) {
-        params.append("search", debouncedSearch.trim());
-      }
-      if (filters.status !== "all") params.append("status", filters.status);
-      if (filters.startDate) params.append("startDate", filters.startDate);
-      if (filters.endDate) params.append("endDate", filters.endDate);
-
-      const invoicesRes = await axios.get(
-        `${ENDPOINTS.INVOICES}?${params.toString()}`,
-        config,
-      );
-
-      const data = invoicesRes.data;
-      if (Array.isArray(data)) {
-        setInvoices(data);
-        setTotalInvoices(data.length);
-        setTotalPages(Math.ceil(data.length / pageSize) || 1);
-      } else {
-        setInvoices(data.invoices || data.data || []);
-        setTotalInvoices(data.total || 0);
-        setTotalPages(data.pages || 1);
-      }
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching data:", error);
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch, filters]);
 
-  useEffect(() => {
-    fetchData();
-  }, [page, pageSize, debouncedSearch, filters]);
+  const queryParams = {
+    page,
+    limit: pageSize,
+    ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+    ...(filters.status !== "all" ? { status: filters.status } : {}),
+    ...(filters.startDate ? { startDate: filters.startDate } : {}),
+    ...(filters.endDate ? { endDate: filters.endDate } : {}),
+  };
+
+  const {
+    data: invoicesData,
+    isLoading,
+    isFetching,
+    error,
+  } = useQuery({
+    queryKey: ["invoices", queryParams],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.INVOICES, {
+        params: queryParams,
+      });
+      return res.data;
+    },
+    placeholderData: (previousData) => previousData,
+  });
+
+  const invoices = Array.isArray(invoicesData)
+    ? invoicesData
+    : invoicesData?.data || [];
+  const totalInvoices = Array.isArray(invoicesData)
+    ? invoicesData.length
+    : invoicesData?.total || 0;
+  const totalPages = Array.isArray(invoicesData)
+    ? Math.ceil(invoicesData.length / pageSize) || 1
+    : invoicesData?.pages || 1;
+
+  const paymentMutation = useMutation({
+    mutationFn: async (paymentData) => {
+      await apiClient.post(ENDPOINTS.PAYMENTS, paymentData);
+    },
+    onSuccess: () => {
+      toast.success("Payment recorded successfully");
+      setIsPaymentModalOpen(false);
+      setSelectedInvoice(null);
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+    },
+    onError: (err) => {
+      console.error("Error saving payment:", err);
+      toast.error(err.response?.data?.message || "Failed to save payment");
+    },
+  });
+
+  const handlePaymentSave = (paymentData) => {
+    paymentMutation.mutate(paymentData);
+  };
+
+  const deleteMutation = useMutation({
+    mutationFn: async (invoiceId) => {
+      await apiClient.delete(ENDPOINTS.INVOICE_BY_ID(invoiceId));
+    },
+    onSuccess: () => {
+      toast.success("Invoice deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+    },
+    onError: (err) => {
+      console.error("Error deleting invoice:", err);
+      toast.error(err.response?.data?.message || "Failed to delete invoice");
+    },
+  });
+
+  const handleDelete = (invoiceId) => {
+    if (
+      window.confirm(
+        "Are you sure you want to delete this invoice? This will also delete all associated payment records.",
+      )
+    ) {
+      deleteMutation.mutate(invoiceId);
+    }
+  };
 
   const resetFilters = () => {
     setSearch("");
@@ -125,46 +161,30 @@ const Invoices = () => {
     setIsPaymentModalOpen(true);
   };
 
-  const handlePaymentSave = async (paymentData) => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.post(ENDPOINTS.PAYMENTS, paymentData, config);
-      setIsPaymentModalOpen(false);
-      setSelectedInvoice(null);
-      fetchData(); // Refresh data to show updated status
-    } catch (error) {
-      console.error("Error saving payment:", error);
-      alert("Failed to save payment");
-    }
-  };
+  if (isLoading) return <div className="text-white">Loading invoices...</div>;
 
-  const handleDelete = async (invoiceId) => {
-    if (
-      !window.confirm(
-        "Are you sure you want to delete this invoice? This will also delete all associated payment records.",
-      )
-    ) {
-      return;
-    }
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.delete(ENDPOINTS.INVOICE_BY_ID(invoiceId), config);
-      fetchData(); // Refresh data
-      alert("Invoice deleted successfully");
-    } catch (error) {
-      console.error("Error deleting invoice:", error);
-      alert("Failed to delete invoice");
-    }
-  };
-
-  if (loading) return <div className="text-white">Loading invoices...</div>;
+  if (error && !invoicesData) {
+    return (
+      <div className="p-6 bg-red-900/20 border border-red-800 text-red-400 rounded-lg">
+        <p className="font-semibold">Failed to load invoices</p>
+        <p className="text-sm mt-1">
+          {error.response?.data?.message || error.message}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-white">Invoices</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white">Invoices</h1>
+          {isFetching && !isLoading && (
+            <span className="text-xs text-blue-400 bg-blue-950/60 border border-blue-800/60 px-2 py-0.5 rounded animate-pulse">
+              Refreshing...
+            </span>
+          )}
+        </div>
         <Link
           to="/invoices/create"
           className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
@@ -321,7 +341,8 @@ const Invoices = () => {
                     {user?.role === "admin" && (
                       <button
                         onClick={() => handleDelete(invoice._id)}
-                        className="text-red-400 hover:text-red-300"
+                        disabled={deleteMutation.isPending}
+                        className="text-red-400 hover:text-red-300 disabled:opacity-50"
                         title="Delete Invoice"
                       >
                         <Trash2 className="h-5 w-5" />
@@ -350,7 +371,7 @@ const Invoices = () => {
             </tbody>
           </table>
         </div>
-        {invoices.length === 0 && !loading && (
+        {invoices.length === 0 && !isLoading && (
           <div className="p-6 text-center text-slate-500">
             No invoices found. Try adjusting your search or create one to get started.
           </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { Plus, Edit2, Trash2, X } from "lucide-react";
 import { toast } from "react-hot-toast";
@@ -11,17 +12,14 @@ import SearchBar from "../components/SearchBar";
 import useDebounce from "../utils/useDebounce";
 
 const Users = () => {
+  const queryClient = useQueryClient();
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 350);
   const [roleFilter, setRoleFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalUsers, setTotalUsers] = useState(0);
 
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -42,88 +40,100 @@ const Users = () => {
     }
   }, [user, navigate]);
 
-  const fetchUsers = async () => {
-    try {
-      setLoading(true);
-      const token = user.token;
-      const config = {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
-          page,
-          limit: pageSize,
-          ...(debouncedSearchTerm ? { search: debouncedSearchTerm } : {}),
-          ...(roleFilter !== "all" ? { role: roleFilter } : {}),
-        },
-      };
-      const { data } = await axios.get(ENDPOINTS.USERS, config);
-      if (Array.isArray(data)) {
-        setUsers(data);
-        setTotalUsers(data.length);
-        setTotalPages(1);
-      } else {
-        setUsers(data.users || data.data || []);
-        setTotalUsers(data.total ?? 0);
-        setTotalPages(data.pages ?? 1);
-      }
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching users:", error);
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     setPage(1);
   }, [debouncedSearchTerm, roleFilter]);
 
-  useEffect(() => {
-    if (user?.role === "admin") {
-      fetchUsers();
-    }
-  }, [user, page, pageSize, debouncedSearchTerm, roleFilter]);
+  const queryParams = {
+    page,
+    limit: pageSize,
+    ...(debouncedSearchTerm ? { search: debouncedSearchTerm } : {}),
+    ...(roleFilter !== "all" ? { role: roleFilter } : {}),
+  };
 
-  const handleSubmit = async (e) => {
+  const {
+    data: queryResult,
+    isLoading,
+    isFetching,
+  } = useQuery({
+    queryKey: ["users", queryParams],
+    queryFn: async () => {
+      const { data } = await apiClient.get(ENDPOINTS.USERS, { params: queryParams });
+      return data;
+    },
+    enabled: user?.role === "admin",
+    placeholderData: (previousData) => previousData,
+  });
+
+  const users = Array.isArray(queryResult)
+    ? queryResult
+    : queryResult?.data || [];
+  const totalUsers = Array.isArray(queryResult)
+    ? queryResult.length
+    : (queryResult?.total ?? 0);
+  const totalPages = Array.isArray(queryResult)
+    ? 1
+    : (queryResult?.pages ?? 1);
+
+  const saveMutation = useMutation({
+    mutationFn: async ({ id, data }) => {
+      if (id) {
+        return apiClient.put(ENDPOINTS.USER_BY_ID(id), data);
+      } else {
+        return apiClient.post(ENDPOINTS.USERS, data);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      const msg = editingUser ? "User updated successfully!" : "User created successfully!";
+      setSuccess(msg);
+      toast.success(msg);
+      setFormData({ name: "", email: "", password: "", role: "editor" });
+      setEditingUser(null);
+      setShowModal(false);
+    },
+    onError: (err) => {
+      const msg =
+        err.response?.data?.message ||
+        `Failed to ${editingUser ? "update" : "create"} user`;
+      setError(msg);
+      toast.error(msg);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id) => {
+      return apiClient.delete(ENDPOINTS.USER_BY_ID(id));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      setSuccess("User deleted successfully!");
+      toast.success("User deleted successfully!");
+    },
+    onError: (err) => {
+      const msg = err.response?.data?.message || "Failed to delete user";
+      setError(msg);
+      toast.error(msg);
+    },
+  });
+
+  const handleSubmit = (e) => {
     e.preventDefault();
     setError("");
     setSuccess("");
 
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-
-      if (editingUser) {
-        // Update existing user
-        const updateData = {
-          name: formData.name,
-          email: formData.email,
-          role: formData.role,
-        };
-        // Only include password if it's provided
-        if (formData.password) {
-          updateData.password = formData.password;
-        }
-
-        await axios.put(
-          ENDPOINTS.USER_BY_ID(editingUser._id),
-          updateData,
-          config
-        );
-        setSuccess("User updated successfully!");
-      } else {
-        // Create new user
-        await axios.post(ENDPOINTS.USERS, formData, config);
-        setSuccess("User created successfully!");
+    if (editingUser) {
+      const updateData = {
+        name: formData.name,
+        email: formData.email,
+        role: formData.role,
+      };
+      if (formData.password) {
+        updateData.password = formData.password;
       }
-
-      setFormData({ name: "", email: "", password: "", role: "editor" });
-      setEditingUser(null);
-      setShowModal(false);
-      fetchUsers();
-    } catch (error) {
-      setError(
-        error.response?.data?.message ||
-        `Failed to ${editingUser ? "update" : "create"} user`
-      );
+      saveMutation.mutate({ id: editingUser._id, data: updateData });
+    } else {
+      saveMutation.mutate({ id: null, data: formData });
     }
   };
 
@@ -138,20 +148,11 @@ const Users = () => {
     setShowModal(true);
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = (id) => {
     if (!window.confirm("Are you sure you want to delete this user?")) {
       return;
     }
-
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.delete(ENDPOINTS.USER_BY_ID(id), config);
-      setSuccess("User deleted successfully!");
-      fetchUsers();
-    } catch (error) {
-      setError(error.response?.data?.message || "Failed to delete user");
-    }
+    deleteMutation.mutate(id);
   };
 
   return (
@@ -208,6 +209,11 @@ const Users = () => {
             <option value="manager">Manager</option>
             <option value="editor">Editor</option>
           </select>
+          {isFetching && !isLoading && (
+            <span className="text-xs text-blue-400 animate-pulse bg-blue-500/10 px-2 py-1 rounded">
+              Updating...
+            </span>
+          )}
           {totalUsers > 0 && (
             <span className="text-xs text-slate-400 bg-slate-800 px-2.5 py-1.5 rounded-md border border-slate-700">
               {totalUsers} {totalUsers === 1 ? "user" : "users"}
@@ -240,7 +246,7 @@ const Users = () => {
               </tr>
             </thead>
             <tbody className="bg-slate-900 divide-y divide-slate-800">
-              {loading ? (
+              {isLoading ? (
                 <tr>
                   <td colSpan="5" className="px-6 py-12 text-center text-slate-400">
                     <div className="flex flex-col items-center justify-center">
@@ -426,9 +432,14 @@ const Users = () => {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                  disabled={saveMutation.isPending}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
                 >
-                  {editingUser ? "Update User" : "Create User"}
+                  {saveMutation.isPending
+                    ? "Saving..."
+                    : editingUser
+                      ? "Update User"
+                      : "Create User"}
                 </button>
               </div>
             </form>

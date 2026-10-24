@@ -1,18 +1,12 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
+import apiClient from "../../api/apiClient";
 import { ENDPOINTS } from "../../config/api";
 
 export const fetchSettings = createAsyncThunk(
   "settings/fetchSettings",
-  async (_, { getState, rejectWithValue }) => {
+  async (_, { rejectWithValue }) => {
     try {
-      const { auth } = getState();
-      const config = {
-        headers: {
-          Authorization: `Bearer ${auth.user.token}`,
-        },
-      };
-      const { data } = await axios.get(ENDPOINTS.SETTINGS, config);
+      const { data } = await apiClient.get(ENDPOINTS.SETTINGS);
       return data;
     } catch (error) {
       return rejectWithValue(

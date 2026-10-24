@@ -139,7 +139,6 @@ const getInvoices = async (req, res) => {
       .skip((currentPage - 1) * perPage);
 
     res.json({
-      invoices,
       data: invoices,
       total,
       page: currentPage,

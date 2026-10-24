@@ -52,7 +52,6 @@ const getUsers = async (req, res) => {
       .skip((currentPage - 1) * perPage);
 
     res.json({
-      users,
       data: users,
       total,
       page: currentPage,

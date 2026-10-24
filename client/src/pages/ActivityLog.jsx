@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { useSelector } from "react-redux";
 import { ArrowLeft, RefreshCw, Eye } from "lucide-react";
@@ -11,53 +12,43 @@ import { useDebounce } from "../utils/useDebounce";
 import { formatDate, formatTime } from "../utils/date";
 
 const ActivityLog = () => {
-  const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 350);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [pages, setPages] = useState(1);
-  const [totalLogs, setTotalLogs] = useState(0);
   const [selectedLog, setSelectedLog] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  const fetchLogs = async () => {
-    try {
-      setLoading(true);
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(pageSize),
-      });
-      if (debouncedSearch && debouncedSearch.trim()) {
-        params.append("search", debouncedSearch.trim());
-      }
-
-      const { data } = await axios.get(
-        `${ENDPOINTS.ACTIVITY_LOGS}?${params.toString()}`,
-        config,
-      );
-      setLogs(data.logs || data.data || []);
-      setTotalLogs(data.total || (data.logs ? data.logs.length : 0));
-      setPages(data.pages || 1);
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching logs:", error);
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch]);
 
-  useEffect(() => {
-    fetchLogs();
-  }, [page, pageSize, debouncedSearch, user.token]);
+  const queryParams = {
+    page: String(page),
+    limit: String(pageSize),
+    ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+  };
+
+  const {
+    data: queryResult,
+    isLoading,
+    isFetching,
+    refetch,
+  } = useQuery({
+    queryKey: ["activityLogs", queryParams],
+    queryFn: async () => {
+      const { data } = await apiClient.get(ENDPOINTS.ACTIVITY_LOGS, {
+        params: queryParams,
+      });
+      return data;
+    },
+    placeholderData: (previousData) => previousData,
+  });
+
+  const logs = queryResult?.data || [];
+  const totalLogs = queryResult?.total || (queryResult?.data ? queryResult.data.length : 0);
+  const pages = queryResult?.pages || 1;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -69,13 +60,21 @@ const ActivityLog = () => {
           >
             <ArrowLeft className="h-6 w-6" />
           </Link>
-          <h1 className="text-2xl font-bold text-white">Activity Log</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-white">Activity Log</h1>
+            {isFetching && !isLoading && (
+              <span className="text-xs text-blue-400 animate-pulse bg-blue-500/10 px-2 py-0.5 rounded">
+                Refreshing...
+              </span>
+            )}
+          </div>
         </div>
         <button
-          onClick={fetchLogs}
-          className="flex items-center px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700 transition-colors"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="flex items-center px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700 transition-colors disabled:opacity-50"
         >
-          <RefreshCw className="mr-2 h-4 w-4" /> Refresh
+          <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} /> Refresh
         </button>
       </div>
 
@@ -105,7 +104,7 @@ const ActivityLog = () => {
               </tr>
             </thead>
             <tbody className="bg-slate-900 divide-y divide-slate-800">
-              {loading ? (
+              {isLoading ? (
                 <tr>
                   <td
                     colSpan="5"

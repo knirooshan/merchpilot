@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { Plus, FileText, Eye, Edit, Trash2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
+import toast from "react-hot-toast";
 import { formatCurrency } from "../utils/currency";
 import { formatDate } from "../utils/date";
 import SearchBar from "../components/SearchBar";
@@ -12,69 +14,83 @@ import Pagination from "../components/Pagination";
 import { useDebounce } from "../utils/useDebounce";
 
 const Quotations = () => {
-  const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
   const navigate = useNavigate();
-  const [quotations, setQuotations] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 350);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalQuotations, setTotalQuotations] = useState(0);
   const [filters, setFilters] = useState({
     status: "all",
     startDate: "",
     endDate: "",
   });
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(pageSize),
-      });
-      if (debouncedSearch && debouncedSearch.trim()) {
-        params.append("search", debouncedSearch.trim());
-      }
-      if (filters.status !== "all") params.append("status", filters.status);
-      if (filters.startDate) params.append("startDate", filters.startDate);
-      if (filters.endDate) params.append("endDate", filters.endDate);
-
-      const quotationsRes = await axios.get(
-        `${ENDPOINTS.QUOTATIONS}?${params.toString()}`,
-        config
-      );
-
-      const data = quotationsRes.data;
-      if (Array.isArray(data)) {
-        setQuotations(data);
-        setTotalQuotations(data.length);
-        setTotalPages(Math.ceil(data.length / pageSize) || 1);
-      } else {
-        setQuotations(data.quotations || data.data || []);
-        setTotalQuotations(data.total || 0);
-        setTotalPages(data.pages || 1);
-      }
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching data:", error);
-      setLoading(false);
-    }
-  };
-
+  // Reset to page 1 whenever search query or filters change
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch, filters]);
 
-  useEffect(() => {
-    fetchData();
-  }, [page, pageSize, debouncedSearch, filters]);
+  // Construct query parameters
+  const queryParams = {
+    page,
+    limit: pageSize,
+    ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+    ...(filters.status !== "all" ? { status: filters.status } : {}),
+    ...(filters.startDate ? { startDate: filters.startDate } : {}),
+    ...(filters.endDate ? { endDate: filters.endDate } : {}),
+  };
+
+  // React Query for quotations fetching and caching
+  const {
+    data: quotationsData,
+    isLoading,
+    isFetching,
+    error,
+  } = useQuery({
+    queryKey: ["quotations", queryParams],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.QUOTATIONS, {
+        params: queryParams,
+      });
+      return res.data;
+    },
+    placeholderData: (previousData) => previousData,
+  });
+
+  // Extract pagination info & data
+  const quotations = Array.isArray(quotationsData)
+    ? quotationsData
+    : quotationsData?.data || [];
+  const totalQuotations = Array.isArray(quotationsData)
+    ? quotationsData.length
+    : quotationsData?.total || 0;
+  const totalPages = Array.isArray(quotationsData)
+    ? Math.ceil(quotationsData.length / pageSize) || 1
+    : quotationsData?.pages || 1;
+
+  // React Query mutation for deletion
+  const deleteMutation = useMutation({
+    mutationFn: async (quotationId) => {
+      await apiClient.delete(ENDPOINTS.QUOTATION_BY_ID(quotationId));
+    },
+    onSuccess: () => {
+      toast.success("Quotation deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["quotations"] });
+    },
+    onError: (err) => {
+      console.error("Error deleting quotation:", err);
+      toast.error(err.response?.data?.message || "Failed to delete quotation");
+    },
+  });
+
+  const handleDelete = (quotationId) => {
+    if (window.confirm("Are you sure you want to delete this quotation?")) {
+      deleteMutation.mutate(quotationId);
+    }
+  };
 
   const resetFilters = () => {
     setSearch("");
@@ -97,28 +113,30 @@ const Quotations = () => {
     });
   };
 
-  const handleDelete = async (quotationId) => {
-    if (!window.confirm("Are you sure you want to delete this quotation?")) {
-      return;
-    }
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.delete(ENDPOINTS.QUOTATION_BY_ID(quotationId), config);
-      fetchData(); // Refresh data
-      alert("Quotation deleted successfully");
-    } catch (error) {
-      console.error("Error deleting quotation:", error);
-      alert("Failed to delete quotation");
-    }
-  };
+  if (isLoading) return <div className="text-white">Loading quotations...</div>;
 
-  if (loading) return <div className="text-white">Loading quotations...</div>;
+  if (error && !quotationsData) {
+    return (
+      <div className="p-6 bg-red-900/20 border border-red-800 text-red-400 rounded-lg">
+        <p className="font-semibold">Failed to load quotations</p>
+        <p className="text-sm mt-1">
+          {error.response?.data?.message || error.message}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-white">Quotations</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white">Quotations</h1>
+          {isFetching && !isLoading && (
+            <span className="text-xs text-blue-400 bg-blue-950/60 border border-blue-800/60 px-2 py-0.5 rounded animate-pulse">
+              Refreshing...
+            </span>
+          )}
+        </div>
         <Link
           to="/quotations/create"
           className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
@@ -267,7 +285,8 @@ const Quotations = () => {
                     </button>
                     <button
                       onClick={() => handleDelete(quotation._id)}
-                      className="text-red-400 hover:text-red-300"
+                      disabled={deleteMutation.isPending}
+                      className="text-red-400 hover:text-red-300 disabled:opacity-50"
                       title="Delete Quotation"
                     >
                       <Trash2 className="h-5 w-5" />
@@ -285,7 +304,7 @@ const Quotations = () => {
             </tbody>
           </table>
         </div>
-        {quotations.length === 0 && !loading && (
+        {quotations.length === 0 && !isLoading && (
           <div className="p-6 text-center text-slate-500">
             No quotations found. Try adjusting your search or create one to get started.
           </div>

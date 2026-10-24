@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const {
   getVendors,
+  getVendorById,
   createVendor,
   updateVendor,
   deleteVendor,
@@ -13,6 +14,7 @@ router.route("/").get(protect, getVendors).post(protect, admin, createVendor);
 router.route("/:id/summary").get(protect, getVendorSummary);
 router
   .route("/:id")
+  .get(protect, getVendorById)
   .put(protect, admin, updateVendor)
   .delete(protect, admin, deleteVendor);
 

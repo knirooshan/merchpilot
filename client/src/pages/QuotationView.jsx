@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import axios from "axios";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { pdf } from "@react-pdf/renderer";
 import {
@@ -21,66 +22,71 @@ import {
 import { formatDate } from "../utils/date";
 import { getTaxDisplay } from "../utils/taxDisplay";
 import { urlToBase64 } from "../utils/imageUtils";
+import toast from "react-hot-toast";
 
 const QuotationView = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
-  const [quotation, setQuotation] = useState(null);
-  const [logoBase64, setLogoBase64] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [sendingEmail, setSendingEmail] = useState(false);
   const [downloadingPDF, setDownloadingPDF] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const token = user.token;
-        const config = { headers: { Authorization: `Bearer ${token}` } };
-        const { data } = await axios.get(ENDPOINTS.QUOTATION_BY_ID(id), config);
+  const { data: quotation, isLoading } = useQuery({
+    queryKey: ["quotation", id],
+    queryFn: async () => {
+      const { data } = await apiClient.get(ENDPOINTS.QUOTATION_BY_ID(id));
+      const quotationData = { ...data };
+      const token = user?.token;
 
-        const quotationData = data;
-
-        // Convert product images to base64 for items
-        const itemsWithImages = await Promise.all(
-          quotationData.items.map(async (item) => {
-            if (item.product?.images && item.product.images.length > 0) {
-              try {
-                const base64Image = await urlToBase64(
-                  item.product.images[0],
-                  token,
-                );
-                return { ...item, image: base64Image };
-              } catch (error) {
-                console.error(
-                  "Error converting product image to base64:",
-                  error,
-                );
-                return { ...item, image: null };
-              }
+      // Convert product images to base64 for items
+      const itemsWithImages = await Promise.all(
+        (quotationData.items || []).map(async (item) => {
+          if (item.product?.images && item.product.images.length > 0) {
+            try {
+              const base64Image = await urlToBase64(
+                item.product.images[0],
+                token,
+              );
+              return { ...item, image: base64Image };
+            } catch (error) {
+              console.error(
+                "Error converting product image to base64:",
+                error,
+              );
+              return { ...item, image: null };
             }
-            return { ...item, image: null };
-          }),
-        );
+          }
+          return { ...item, image: null };
+        }),
+      );
 
-        quotationData.items = itemsWithImages;
-        setQuotation(quotationData);
+      quotationData.items = itemsWithImages;
+      return quotationData;
+    },
+    enabled: Boolean(id),
+  });
 
-        // Convert logo URL to base64 for PDF
-        if (settings?.logo) {
-          const base64Logo = await urlToBase64(settings.logo, token);
-          setLogoBase64(base64Logo);
-        }
+  const { data: logoBase64 } = useQuery({
+    queryKey: ["logoBase64", settings?.logo],
+    queryFn: async () => {
+      if (!settings?.logo) return null;
+      return urlToBase64(settings.logo, user?.token);
+    },
+    enabled: Boolean(settings?.logo),
+  });
 
-        setLoading(false);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [id, user.token, settings]);
+  const sendEmailMutation = useMutation({
+    mutationFn: async ({ pdfBase64 }) => {
+      return apiClient.post(ENDPOINTS.EMAIL_SEND_QUOTATION(id), { pdfBase64 });
+    },
+    onSuccess: () => {
+      toast.success("Email sent successfully!");
+    },
+    onError: (error) => {
+      console.error("Error sending email:", error);
+      toast.error("Failed to send email. Please check SMTP settings.");
+    },
+  });
 
   const handleConvertToInvoice = () => {
     navigate("/invoices/create", {
@@ -89,9 +95,8 @@ const QuotationView = () => {
   };
 
   const handleSendEmail = async () => {
-    // Check if customer has email
-    if (!quotation.customer?.email) {
-      alert(
+    if (!quotation?.customer?.email) {
+      toast.error(
         "This customer does not have an email address. Please add an email to the customer profile first.",
       );
       return;
@@ -99,9 +104,8 @@ const QuotationView = () => {
 
     if (!window.confirm("Send this quotation to the customer via email?"))
       return;
-    setSendingEmail(true);
+
     try {
-      // Generate PDF blob from React component
       const pdfDoc = (
         <QuotationPDF
           quotation={quotation}
@@ -110,7 +114,6 @@ const QuotationView = () => {
       );
       const blob = await pdf(pdfDoc).toBlob();
 
-      // Convert blob to base64
       const reader = new FileReader();
       const base64Promise = new Promise((resolve) => {
         reader.onloadend = () => {
@@ -121,19 +124,10 @@ const QuotationView = () => {
       reader.readAsDataURL(blob);
       const pdfBase64 = await base64Promise;
 
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.post(
-        ENDPOINTS.EMAIL_SEND_QUOTATION(id),
-        { pdfBase64 },
-        config,
-      );
-      alert("Email sent successfully!");
+      sendEmailMutation.mutate({ pdfBase64 });
     } catch (error) {
-      console.error("Error sending email:", error);
-      alert("Failed to send email. Please check SMTP settings.");
-    } finally {
-      setSendingEmail(false);
+      console.error("Error generating PDF for email:", error);
+      toast.error("Failed to generate PDF for email.");
     }
   };
 
@@ -158,13 +152,13 @@ const QuotationView = () => {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Error downloading PDF:", error);
-      alert("Failed to download PDF. Please try again.");
+      toast.error("Failed to download PDF. Please try again.");
     } finally {
       setDownloadingPDF(false);
     }
   };
 
-  if (loading) return <div className="text-white">Loading...</div>;
+  if (isLoading) return <div className="text-white">Loading...</div>;
   if (!quotation) return <div className="text-white">Quotation not found</div>;
 
   const effectiveSettings = getDocumentCurrencySettings(quotation, settings);
@@ -181,11 +175,11 @@ const QuotationView = () => {
         <div className="flex gap-4">
           <button
             onClick={handleSendEmail}
-            disabled={sendingEmail}
+            disabled={sendEmailMutation.isPending}
             className="flex items-center px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors disabled:opacity-50"
           >
             <Mail className="mr-2 h-5 w-5" />
-            {sendingEmail ? "Sending..." : "Send Email"}
+            {sendEmailMutation.isPending ? "Sending..." : "Send Email"}
           </button>
           <button
             onClick={handleConvertToInvoice}

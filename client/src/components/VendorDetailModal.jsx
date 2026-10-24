@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useSelector } from "react-redux";
-import axios from "axios";
+import { useQuery } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import {
   X,
@@ -47,10 +48,10 @@ const useCurrencyFmt = () => {
 const fmtDate = (d) =>
   d
     ? new Date(d).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      })
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    })
     : "-";
 
 const CHART_COLORS = [
@@ -181,31 +182,23 @@ const HorizontalBar = ({
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════════ */
 const VendorDetailModal = ({ vendorId, onClose }) => {
-  const { user } = useSelector((state) => state.auth);
   const { fmt, fmtFull } = useCurrencyFmt();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    const fetchSummary = async () => {
-      try {
-        const config = { headers: { Authorization: `Bearer ${user.token}` } };
-        const { data: summary } = await axios.get(
-          ENDPOINTS.VENDOR_SUMMARY(vendorId),
-          config,
-        );
-        setData(summary);
-      } catch (err) {
-        setError(
-          err.response?.data?.message || "Failed to load vendor details",
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchSummary();
-  }, [vendorId, user.token]);
+  const {
+    data,
+    isLoading: loading,
+    error: queryError,
+  } = useQuery({
+    queryKey: ["vendorSummary", vendorId],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.VENDOR_SUMMARY(vendorId));
+      return res.data;
+    },
+    enabled: !!vendorId,
+  });
+
+  const error =
+    queryError?.response?.data?.message || queryError?.message || null;
 
   const { monthlyExpenses, categoryChartData, topExpenses } = useMemo(() => {
     if (!data) return {};
@@ -345,88 +338,88 @@ const VendorDetailModal = ({ vendorId, onClose }) => {
               {/* Charts row: Monthly trend + Category donut */}
               {(monthlyExpenses?.length > 0 ||
                 categoryChartData?.length > 0) && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  {/* Monthly spending trend */}
-                  {monthlyExpenses?.length > 0 && (
-                    <div className="lg:col-span-2 bg-slate-800 rounded-xl border border-slate-700 p-5">
-                      <p className="text-sm font-semibold text-white mb-0.5">
-                        Spending Over Time
-                      </p>
-                      <p className="text-xs text-slate-400 mb-4">
-                        Monthly expense totals
-                      </p>
-                      <ResponsiveContainer width="100%" height={200}>
-                        <BarChart data={monthlyExpenses}>
-                          <CartesianGrid
-                            strokeDasharray="3 3"
-                            stroke="#334155"
-                          />
-                          <XAxis
-                            dataKey="label"
-                            stroke="#64748b"
-                            tick={{ fontSize: 10 }}
-                          />
-                          <YAxis
-                            stroke="#64748b"
-                            tick={{ fontSize: 10 }}
-                            tickFormatter={(v) => fmt(v)}
-                            width={45}
-                          />
-                          <Tooltip content={<ChartTooltip fmtFn={fmt} />} />
-                          <Bar
-                            dataKey="amount"
-                            name="Expenses"
-                            fill="#ef4444"
-                            radius={[4, 4, 0, 0]}
-                          />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {/* Monthly spending trend */}
+                    {monthlyExpenses?.length > 0 && (
+                      <div className="lg:col-span-2 bg-slate-800 rounded-xl border border-slate-700 p-5">
+                        <p className="text-sm font-semibold text-white mb-0.5">
+                          Spending Over Time
+                        </p>
+                        <p className="text-xs text-slate-400 mb-4">
+                          Monthly expense totals
+                        </p>
+                        <ResponsiveContainer width="100%" height={200}>
+                          <BarChart data={monthlyExpenses}>
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              stroke="#334155"
+                            />
+                            <XAxis
+                              dataKey="label"
+                              stroke="#64748b"
+                              tick={{ fontSize: 10 }}
+                            />
+                            <YAxis
+                              stroke="#64748b"
+                              tick={{ fontSize: 10 }}
+                              tickFormatter={(v) => fmt(v)}
+                              width={45}
+                            />
+                            <Tooltip content={<ChartTooltip fmtFn={fmt} />} />
+                            <Bar
+                              dataKey="amount"
+                              name="Expenses"
+                              fill="#ef4444"
+                              radius={[4, 4, 0, 0]}
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
 
-                  {/* Category donut */}
-                  {categoryChartData?.length > 0 && (
-                    <div className="bg-slate-800 rounded-xl border border-slate-700 p-5">
-                      <p className="text-sm font-semibold text-white mb-0.5">
-                        By Category
-                      </p>
-                      <p className="text-xs text-slate-400 mb-2">
-                        Spend distribution
-                      </p>
-                      <ResponsiveContainer width="100%" height={200}>
-                        <PieChart>
-                          <Pie
-                            data={categoryChartData}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={45}
-                            outerRadius={70}
-                            paddingAngle={3}
-                            dataKey="value"
-                            nameKey="name"
-                          >
-                            {categoryChartData.map((_, i) => (
-                              <Cell
-                                key={i}
-                                fill={CHART_COLORS[i % CHART_COLORS.length]}
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip content={<ChartTooltip fmtFn={fmt} />} />
-                          <Legend
-                            iconType="circle"
-                            iconSize={7}
-                            wrapperStyle={{
-                              fontSize: "10px",
-                              color: "#94a3b8",
-                            }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </div>
-              )}
+                    {/* Category donut */}
+                    {categoryChartData?.length > 0 && (
+                      <div className="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                        <p className="text-sm font-semibold text-white mb-0.5">
+                          By Category
+                        </p>
+                        <p className="text-xs text-slate-400 mb-2">
+                          Spend distribution
+                        </p>
+                        <ResponsiveContainer width="100%" height={200}>
+                          <PieChart>
+                            <Pie
+                              data={categoryChartData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={45}
+                              outerRadius={70}
+                              paddingAngle={3}
+                              dataKey="value"
+                              nameKey="name"
+                            >
+                              {categoryChartData.map((_, i) => (
+                                <Cell
+                                  key={i}
+                                  fill={CHART_COLORS[i % CHART_COLORS.length]}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip content={<ChartTooltip fmtFn={fmt} />} />
+                            <Legend
+                              iconType="circle"
+                              iconSize={7}
+                              wrapperStyle={{
+                                fontSize: "10px",
+                                color: "#94a3b8",
+                              }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </div>
+                )}
 
               {/* Category breakdown + Top expenses */}
               {(categoryChartData?.length > 0 || topExpenses?.length > 0) && (

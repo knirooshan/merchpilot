@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useDispatch } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import { useMutation } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { setUser } from "../store/slices/authSlice";
 import { toast } from "react-hot-toast";
@@ -9,7 +10,6 @@ import { toast } from "react-hot-toast";
 const SetupPage = () => {
   const [step, setStep] = useState(1);
   const [passkey, setPasskey] = useState("");
-  const [loading, setLoading] = useState(false);
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
@@ -26,56 +26,64 @@ const SetupPage = () => {
     orgCountry: "",
   });
 
-  const handleValidatePasskey = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      await axios.post(ENDPOINTS.SETUP_VALIDATE, { passkey });
+  const validatePasskeyMutation = useMutation({
+    mutationFn: async (key) => {
+      return apiClient.post(ENDPOINTS.SETUP_VALIDATE, { passkey: key });
+    },
+    onSuccess: () => {
       setStep(2);
-    } catch (error) {
+    },
+    onError: (error) => {
       toast.error(error.response?.data?.message || "Invalid passkey");
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+  });
 
-  const handleCompleteSetup = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const payload = {
-        passkey,
-        user: {
-          name: formData.adminName,
-          email: formData.adminEmail,
-          password: formData.adminPassword,
-        },
-        organization: {
-          name: formData.orgName,
-          email: formData.adminEmail, // Default to admin email
-          phone: formData.orgPhone,
-          address: {
-            street: formData.orgAddress,
-            city: formData.orgCity,
-            zip: formData.orgZip,
-            country: formData.orgCountry,
-          },
-        },
-      };
-
-      const { data } = await axios.post(ENDPOINTS.SETUP_COMPLETE, payload);
-
-      // Auto-login
+  const completeSetupMutation = useMutation({
+    mutationFn: async (payload) => {
+      const { data } = await apiClient.post(ENDPOINTS.SETUP_COMPLETE, payload);
+      return data;
+    },
+    onSuccess: (data) => {
       dispatch(setUser(data));
       toast.success("Setup complete!");
       navigate("/", { replace: true });
-      window.location.reload(); // Reload to clear "SETUP_REQUIRED" state if stuck
-    } catch (error) {
+      window.location.reload();
+    },
+    onError: (error) => {
       toast.error(error.response?.data?.message || "Setup failed");
-    } finally {
-      setLoading(false);
-    }
+    },
+  });
+
+  const handleValidatePasskey = (e) => {
+    e.preventDefault();
+    validatePasskeyMutation.mutate(passkey);
   };
+
+  const handleCompleteSetup = (e) => {
+    e.preventDefault();
+    const payload = {
+      passkey,
+      user: {
+        name: formData.adminName,
+        email: formData.adminEmail,
+        password: formData.adminPassword,
+      },
+      organization: {
+        name: formData.orgName,
+        email: formData.adminEmail,
+        phone: formData.orgPhone,
+        address: {
+          street: formData.orgAddress,
+          city: formData.orgCity,
+          zip: formData.orgZip,
+          country: formData.orgCountry,
+        },
+      },
+    };
+    completeSetupMutation.mutate(payload);
+  };
+
+  const loading = validatePasskeyMutation.isPending || completeSetupMutation.isPending;
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8">

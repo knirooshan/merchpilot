@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
+import toast from "react-hot-toast";
 import { useSelector } from "react-redux";
 import { formatCurrency } from "../utils/currency";
 import { formatDate } from "../utils/date";
@@ -15,12 +17,10 @@ import { ENDPOINTS } from "../config/api";
 const Payments = () => {
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
-  const [payments, setPayments] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
-  const [pages, setPages] = useState(1);
-  const [totalPayments, setTotalPayments] = useState(0);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
@@ -35,53 +35,99 @@ const Payments = () => {
     endDate: "",
   });
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(pageSize),
-      });
-      if (debouncedSearch && debouncedSearch.trim()) {
-        params.append("search", debouncedSearch.trim());
-      }
-      if (filters.method !== "all") params.append("method", filters.method);
-      if (filters.source !== "all") params.append("source", filters.source);
-      if (filters.startDate) params.append("startDate", filters.startDate);
-      if (filters.endDate) params.append("endDate", filters.endDate);
-
-      const paymentsRes = await axios.get(
-        `${ENDPOINTS.PAYMENTS}?${params.toString()}`,
-        config
-      );
-
-      const data = paymentsRes.data;
-      if (Array.isArray(data)) {
-        setPayments(data);
-        setTotalPayments(data.length);
-        setPages(Math.ceil(data.length / pageSize) || 1);
-      } else {
-        setPayments(data.payments || data.data || []);
-        setTotalPayments(data.total || 0);
-        setPages(data.pages || 1);
-      }
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching data:", error);
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch, filters]);
 
-  useEffect(() => {
-    fetchData();
-  }, [page, pageSize, debouncedSearch, filters]);
+  const queryParams = {
+    page,
+    limit: pageSize,
+    ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+    ...(filters.method !== "all" ? { method: filters.method } : {}),
+    ...(filters.source !== "all" ? { source: filters.source } : {}),
+    ...(filters.startDate ? { startDate: filters.startDate } : {}),
+    ...(filters.endDate ? { endDate: filters.endDate } : {}),
+  };
+
+  const {
+    data: paymentsData,
+    isLoading,
+    isFetching,
+    error,
+  } = useQuery({
+    queryKey: ["payments", queryParams],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.PAYMENTS, {
+        params: queryParams,
+      });
+      return res.data;
+    },
+    placeholderData: (previousData) => previousData,
+  });
+
+  const payments = Array.isArray(paymentsData)
+    ? paymentsData
+    : paymentsData?.data || [];
+  const totalPayments = Array.isArray(paymentsData)
+    ? paymentsData.length
+    : paymentsData?.total || 0;
+  const pages = Array.isArray(paymentsData)
+    ? Math.ceil(paymentsData.length / pageSize) || 1
+    : paymentsData?.pages || 1;
+
+  const createPaymentMutation = useMutation({
+    mutationFn: async (paymentData) => {
+      const res = await apiClient.post(ENDPOINTS.PAYMENTS, paymentData);
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success("Payment recorded successfully");
+      setIsPaymentModalOpen(false);
+      setSelectedPayment(null);
+      setSelectedInvoice(null);
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+    },
+    onError: (err) => {
+      console.error("Error saving payment:", err);
+      toast.error(err.response?.data?.message || "Failed to save payment");
+    },
+  });
+
+  const updatePaymentMutation = useMutation({
+    mutationFn: async ({ id, data }) => {
+      const res = await apiClient.put(ENDPOINTS.PAYMENT_BY_ID(id), data);
+      return res.data;
+    },
+    onSuccess: () => {
+      toast.success("Payment updated successfully");
+      setIsPaymentModalOpen(false);
+      setShowReasonModal(false);
+      setSelectedPayment(null);
+      setSelectedInvoice(null);
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+    },
+    onError: (err) => {
+      console.error("Error updating payment:", err);
+      toast.error(err.response?.data?.message || "Failed to update payment");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id) => {
+      await apiClient.delete(ENDPOINTS.PAYMENT_BY_ID(id));
+    },
+    onSuccess: () => {
+      toast.success("Payment deleted successfully");
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+    },
+    onError: (err) => {
+      console.error("Error deleting payment:", err);
+      toast.error(err.response?.data?.message || "Failed to delete payment");
+    },
+  });
 
   const resetFilters = () => {
     setSearch("");
@@ -103,21 +149,13 @@ const Payments = () => {
     );
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = (id) => {
     if (
-      !window.confirm(
-        "Are you sure you want to delete this payment? This will revert the invoice balance."
+      window.confirm(
+        "Are you sure you want to delete this payment? This will revert the invoice balance.",
       )
-    )
-      return;
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.delete(ENDPOINTS.PAYMENT_BY_ID(id), config);
-      fetchData();
-    } catch (error) {
-      console.error("Error deleting payment:", error);
-      alert("Failed to delete payment");
+    ) {
+      deleteMutation.mutate(id);
     }
   };
 
@@ -139,52 +177,38 @@ const Payments = () => {
     setIsPaymentModalOpen(true);
   };
 
-  const handlePaymentSave = async (paymentData) => {
+  const handlePaymentSave = (paymentData) => {
     if (selectedPayment) {
-      // For edits, show reason modal
       setPendingPaymentData(paymentData);
       setShowReasonModal(true);
     } else {
-      // For new payments, save directly
-      try {
-        const token = user.token;
-        const config = { headers: { Authorization: `Bearer ${token}` } };
-        await axios.post(ENDPOINTS.PAYMENTS, paymentData, config);
-        setIsPaymentModalOpen(false);
-        setSelectedPayment(null);
-        setSelectedInvoice(null);
-        fetchData();
-      } catch (error) {
-        console.error("Error saving payment:", error);
-        alert("Failed to save payment");
-      }
+      createPaymentMutation.mutate(paymentData);
     }
   };
 
-  const handleConfirmEdit = async (reason) => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      await axios.put(
-        ENDPOINTS.PAYMENT_BY_ID(selectedPayment._id),
-        {
-          ...pendingPaymentData,
-          editReason: reason,
-          editedBy: user.name,
-        },
-        config
-      );
-      setIsPaymentModalOpen(false);
-      setShowReasonModal(false);
-      setSelectedPayment(null);
-      setSelectedInvoice(null);
-      setPendingPaymentData(null);
-      fetchData();
-    } catch (error) {
-      console.error("Error updating payment:", error);
-      alert("Failed to update payment");
-    }
+  const handleConfirmEdit = (reason) => {
+    updatePaymentMutation.mutate({
+      id: selectedPayment._id,
+      data: {
+        ...pendingPaymentData,
+        editReason: reason,
+        editedBy: user.name,
+      },
+    });
   };
+
+  if (isLoading) return <div className="text-white">Loading payments...</div>;
+
+  if (error && !paymentsData) {
+    return (
+      <div className="p-6 bg-red-900/20 border border-red-800 text-red-400 rounded-lg">
+        <p className="font-semibold">Failed to load payments</p>
+        <p className="text-sm mt-1">
+          {error.response?.data?.message || error.message}
+        </p>
+      </div>
+    );
+  }
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -199,12 +223,17 @@ const Payments = () => {
     }
   };
 
-  if (loading) return <div className="text-white">Loading payments...</div>;
-
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-white">Payments</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white">Payments</h1>
+          {isFetching && !isLoading && (
+            <span className="text-xs text-blue-400 bg-blue-950/60 border border-blue-800/60 px-2 py-0.5 rounded animate-pulse">
+              Refreshing...
+            </span>
+          )}
+        </div>
         <button
           onClick={handleCreate}
           className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
@@ -359,7 +388,8 @@ const Payments = () => {
                     {user?.role === "admin" && (
                       <button
                         onClick={() => handleDelete(payment._id)}
-                        className="text-red-400 hover:text-red-300"
+                        disabled={deleteMutation.isPending}
+                        className="text-red-400 hover:text-red-300 disabled:opacity-50"
                       >
                         <Trash2 className="h-5 w-5" />
                       </button>
@@ -370,7 +400,7 @@ const Payments = () => {
             </tbody>
           </table>
         </div>
-        {payments.length === 0 && !loading && (
+        {payments.length === 0 && !isLoading && (
           <div className="p-6 text-center text-slate-500">
             No payments found. Try adjusting your search or filters.
           </div>

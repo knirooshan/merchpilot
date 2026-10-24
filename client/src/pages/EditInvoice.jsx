@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { useNavigate, useParams } from "react-router-dom";
 import { Plus, Trash, Save, Edit2 } from "lucide-react";
@@ -16,15 +17,21 @@ import CurrencySelector from "../components/CurrencySelector";
 import DateInput from "../components/DateInput";
 import RichTextEditor from "../components/RichTextEditor";
 import ItemModal from "../components/ItemModal";
+import SearchableSelect from "../components/SearchableSelect";
+import {
+  searchCustomersApi,
+  fetchCustomerByIdApi,
+  formatCustomerOption,
+} from "../utils/selectHelpers";
+import toast from "react-hot-toast";
 
 const EditInvoice = () => {
+  const queryClient = useQueryClient();
   const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
   const navigate = useNavigate();
   const { id } = useParams();
-  const [customers, setCustomers] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [selectedCustomerOpt, setSelectedCustomerOpt] = useState(null);
   const [showReasonModal, setShowReasonModal] = useState(false);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showItemModal, setShowItemModal] = useState(false);
@@ -50,81 +57,85 @@ const EditInvoice = () => {
     invoiceType: "tax",
   });
 
+  const { data: productsData, isLoading: loadingProducts } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.PRODUCTS);
+      return Array.isArray(res.data) ? res.data : res.data?.data || [];
+    },
+  });
+  const products = productsData || [];
+
+  const { data: invoiceData, isLoading: loadingInvoice } = useQuery({
+    queryKey: ["invoice", id],
+    queryFn: async () => {
+      const res = await apiClient.get(ENDPOINTS.INVOICE_BY_ID(id));
+      return res.data;
+    },
+    enabled: Boolean(id),
+  });
+
+  const loading = loadingProducts || loadingInvoice;
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const token = user.token;
-        const config = { headers: { Authorization: `Bearer ${token}` } };
-        const [custRes, prodRes, invoiceRes] = await Promise.all([
-          axios.get(ENDPOINTS.CUSTOMERS, config),
-          axios.get(ENDPOINTS.PRODUCTS, config),
-          axios.get(ENDPOINTS.INVOICE_BY_ID(id), config),
-        ]);
-        setCustomers(custRes.data);
-        setProducts(prodRes.data);
-
-        const invoice = invoiceRes.data;
-        setFormData({
-          customer: invoice.customer._id,
-          items: invoice.items.map((item) => ({
-            product:
-              typeof item.product === "object"
-                ? item.product?._id
-                : item.product || null,
-            name: item.name,
-            description: item.description || "",
-            sku: item.sku || "",
-            price: item.price,
-            quantity: item.quantity,
-            discount: item.discount || 0,
-            discountType: item.discountType || "fixed",
-            isTaxable: item.isTaxable ?? false,
-            taxMethod:
-              item.taxMethod || settings?.tax?.defaultMethod || "exclusive",
-            itemTax: item.itemTax || 0,
-            total: item.total,
-          })),
-          notes: invoice.notes || "",
-          invoiceDate: invoice.invoiceDate
-            ? invoice.invoiceDate.split("T")[0]
-            : "",
-          dueDate: invoice.dueDate ? invoice.dueDate.split("T")[0] : "",
-          deliveryDate: invoice.deliveryDate
-            ? invoice.deliveryDate.split("T")[0]
-            : "",
-          paymentMethod: invoice.paymentMethod || "Bank Transfer",
-          taxRate: invoice.taxRate || settings?.tax?.rate || 0,
-          discount: invoice.discount || 0,
-          deliveryCharge: invoice.deliveryCharge || 0,
-          deliveryNote: invoice.deliveryNote || "",
-          terms: invoice.terms || "",
-          status: invoice.status,
-          reference: invoice.reference || "",
-          placeOfSupply:
-            invoice.placeOfSupply ||
-            settings?.ird?.placeOfSupply ||
-            settings?.address?.city ||
-            "",
-          invoiceType: invoice.invoiceType || "tax",
-        });
-
-        // Restore saved currency (only if foreign)
-        if (isForeignCurrency(invoice, settings)) {
-          setCurrency(invoice.currency);
-          setExchangeRate(invoice.exchangeRate || null);
-        } else {
-          setCurrency(null);
-          setExchangeRate(null);
-        }
-
-        setLoading(false);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        setLoading(false);
+    if (invoiceData) {
+      if (invoiceData.customer) {
+        setSelectedCustomerOpt(formatCustomerOption(invoiceData.customer));
       }
-    };
-    fetchData();
-  }, [user.token, id, settings]);
+      setFormData({
+        customer: invoiceData.customer?._id || invoiceData.customer || "",
+        items: (invoiceData.items || []).map((item) => ({
+          product:
+            typeof item.product === "object"
+              ? item.product?._id
+              : item.product || null,
+          name: item.name,
+          description: item.description || "",
+          sku: item.sku || "",
+          price: item.price,
+          quantity: item.quantity,
+          discount: item.discount || 0,
+          discountType: item.discountType || "fixed",
+          isTaxable: item.isTaxable ?? false,
+          taxMethod:
+            item.taxMethod || settings?.tax?.defaultMethod || "exclusive",
+          itemTax: item.itemTax || 0,
+          total: item.total,
+        })),
+        notes: invoiceData.notes || "",
+        invoiceDate: invoiceData.invoiceDate
+          ? invoiceData.invoiceDate.split("T")[0]
+          : "",
+        dueDate: invoiceData.dueDate ? invoiceData.dueDate.split("T")[0] : "",
+        deliveryDate: invoiceData.deliveryDate
+          ? invoiceData.deliveryDate.split("T")[0]
+          : "",
+        paymentMethod: invoiceData.paymentMethod || "Bank Transfer",
+        taxRate: invoiceData.taxRate || settings?.tax?.rate || 0,
+        discount: invoiceData.discount || 0,
+        deliveryCharge: invoiceData.deliveryCharge || 0,
+        deliveryNote: invoiceData.deliveryNote || "",
+        terms: invoiceData.terms || "",
+        status: invoiceData.status,
+        reference: invoiceData.reference || "",
+        placeOfSupply:
+          invoiceData.placeOfSupply ||
+          settings?.ird?.placeOfSupply ||
+          settings?.address?.city ||
+          "",
+        invoiceType: invoiceData.invoiceType || "tax",
+      });
+
+      // Restore saved currency (only if foreign)
+      if (isForeignCurrency(invoiceData, settings)) {
+        setCurrency(invoiceData.currency);
+        setExchangeRate(invoiceData.exchangeRate || null);
+      } else {
+        setCurrency(null);
+        setExchangeRate(null);
+      }
+    }
+  }, [invoiceData, settings]);
 
   const addItem = (item) => {
     if (editingItemIndex !== null) {
@@ -164,52 +175,65 @@ const EditInvoice = () => {
     setShowReasonModal(true);
   };
 
-  const handleConfirmSave = async (reason) => {
-    const totals = calculateTotals();
-
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const isForeign = isForeignCurrency({ currency, exchangeRate }, settings);
-      await axios.put(
-        ENDPOINTS.INVOICE_BY_ID(id),
-        {
-          ...formData,
-          items: totals.itemsWithTax,
-          subtotal: totals.subtotal,
-          tax: totals.tax,
-          taxRate: formData.taxRate,
-          total: totals.total,
-          editReason: reason,
-          editedBy: user.name,
-          currency: isForeign ? currency : null,
-          exchangeRate: isForeign ? exchangeRate : null,
-        },
-        config,
-      );
+  const updateInvoiceMutation = useMutation({
+    mutationFn: async (payload) => {
+      const { data } = await apiClient.put(ENDPOINTS.INVOICE_BY_ID(id), payload);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["invoice", id] });
+      queryClient.invalidateQueries({ queryKey: ["outstandingInvoices"] });
+      queryClient.invalidateQueries({ queryKey: ["deliveryQueue"] });
+      toast.success("Invoice updated successfully");
       navigate(`/invoices/${id}`);
-    } catch (error) {
+    },
+    onError: (error) => {
       console.error("Error updating invoice:", error);
-    }
+      toast.error(error.response?.data?.message || "Error updating invoice");
+    },
+  });
+
+  const createCustomerMutation = useMutation({
+    mutationFn: async (customerData) => {
+      const { data } = await apiClient.post(ENDPOINTS.CUSTOMERS, customerData);
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      const opt = formatCustomerOption(data);
+      setSelectedCustomerOpt(opt);
+      setFormData((prev) => ({ ...prev, customer: data._id }));
+      setShowCustomerModal(false);
+      toast.success("Customer created successfully");
+    },
+    onError: (error) => {
+      console.error("Error creating customer:", error);
+      toast.error(error.response?.data?.message || "Error creating customer");
+    },
+  });
+
+  const handleConfirmSave = (reason) => {
+    const totals = calculateTotals();
+    const isForeign = isForeignCurrency({ currency, exchangeRate }, settings);
+
+    updateInvoiceMutation.mutate({
+      ...formData,
+      items: totals.itemsWithTax,
+      subtotal: totals.subtotal,
+      tax: totals.tax,
+      taxRate: formData.taxRate,
+      total: totals.total,
+      editReason: reason,
+      editedBy: user?.name,
+      currency: isForeign ? currency : null,
+      exchangeRate: isForeign ? exchangeRate : null,
+    });
     setShowReasonModal(false);
   };
 
-  const handleSaveCustomer = async (customerData) => {
-    try {
-      const token = user.token;
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-      const { data } = await axios.post(
-        ENDPOINTS.CUSTOMERS,
-        customerData,
-        config,
-      );
-      setCustomers([...customers, data]);
-      setFormData({ ...formData, customer: data._id });
-      setShowCustomerModal(false);
-    } catch (error) {
-      console.error("Error creating customer:", error);
-      alert("Error creating customer");
-    }
+  const handleSaveCustomer = (customerData) => {
+    createCustomerMutation.mutate(customerData);
   };
 
   const { subtotal, tax, total } = calculateTotals();
@@ -230,24 +254,20 @@ const EditInvoice = () => {
                 Select Customer
               </label>
               <div className="flex gap-2">
-                <select
+                <SearchableSelect
                   value={formData.customer}
-                  onChange={(e) =>
-                    setFormData({ ...formData, customer: e.target.value })
-                  }
-                  className="block w-full bg-slate-950 border border-slate-700 text-white rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  onChange={(val, opt) => {
+                    setFormData({ ...formData, customer: val });
+                    setSelectedCustomerOpt(opt);
+                  }}
+                  loadOptions={(q) => searchCustomersApi(user.token, q, 10)}
+                  fetchOptionById={(id) => fetchCustomerByIdApi(user.token, id)}
+                  selectedOption={selectedCustomerOpt}
+                  placeholder="Select a customer..."
+                  searchPlaceholder="Search customers by name, email, phone, company..."
                   required
-                >
-                  <option value="">Select a customer...</option>
-                  {customers.map((c) => (
-                    <option key={c._id} value={c._id}>
-                      {c.firstName || c.lastName
-                        ? `${c.firstName || ""} ${c.lastName || ""}`.trim()
-                        : c.billing?.company || "Unnamed"}{" "}
-                      ({c.email || "-"})
-                    </option>
-                  ))}
-                </select>
+                  className="flex-1"
+                />
                 <button
                   type="button"
                   onClick={() => setShowCustomerModal(true)}
@@ -568,10 +588,11 @@ const EditInvoice = () => {
         <div className="flex justify-end">
           <button
             type="submit"
-            className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-sm font-medium"
+            disabled={updateInvoiceMutation.isPending}
+            className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-sm font-medium transition-colors disabled:opacity-50"
           >
             <Save className="mr-2 h-5 w-5" />
-            Save Changes
+            {updateInvoiceMutation.isPending ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </form>
