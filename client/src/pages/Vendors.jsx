@@ -45,7 +45,7 @@ const Vendors = () => {
         setTotalVendors(data.length);
         setTotalPages(Math.ceil(data.length / pageSize) || 1);
       } else {
-        setVendors(data.vendors || data.data || []);
+        setVendors(data.data || []);
         setTotalVendors(data.total || 0);
         setTotalPages(data.pages || 1);
       }

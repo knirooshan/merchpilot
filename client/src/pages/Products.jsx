@@ -67,7 +67,7 @@ const Products = () => {
         setTotalProducts(data.length);
         setTotalPages(Math.ceil(data.length / pageSize) || 1);
       } else {
-        setProducts(data.products || data.data || []);
+        setProducts(data.data || []);
         setTotalProducts(data.total || 0);
         setTotalPages(data.pages || 1);
       }
@@ -351,9 +351,9 @@ const Products = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
                       className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${product.status === "publish" ||
-                          product.status === "published"
-                          ? "bg-green-900/50 text-green-400 border border-green-800"
-                          : "bg-slate-800 text-slate-400 border border-slate-700"
+                        product.status === "published"
+                        ? "bg-green-900/50 text-green-400 border border-green-800"
+                        : "bg-slate-800 text-slate-400 border border-slate-700"
                         }`}
                     >
                       {product.status.charAt(0).toUpperCase() +

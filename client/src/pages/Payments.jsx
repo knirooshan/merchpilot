@@ -64,7 +64,7 @@ const Payments = () => {
         setTotalPayments(data.length);
         setPages(Math.ceil(data.length / pageSize) || 1);
       } else {
-        setPayments(data.payments || data.data || []);
+        setPayments(data.data || []);
         setTotalPayments(data.total || 0);
         setPages(data.pages || 1);
       }

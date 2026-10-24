@@ -92,7 +92,6 @@ const getQuotations = async (req, res) => {
       .skip((currentPage - 1) * perPage);
 
     res.json({
-      quotations,
       data: quotations,
       total,
       page: currentPage,

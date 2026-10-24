@@ -63,7 +63,6 @@ const getTenants = async (req, res) => {
       .skip((currentPage - 1) * perPage);
 
     res.json({
-      tenants,
       data: tenants,
       total,
       page: currentPage,

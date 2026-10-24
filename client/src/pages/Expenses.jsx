@@ -105,7 +105,7 @@ const Expenses = () => {
         setTotalExpenses(data.length);
         setTotalPages(Math.ceil(data.length / pageSize) || 1);
       } else {
-        setExpenses(data.expenses || data.data || []);
+        setExpenses(data.data || []);
         setTotalExpenses(data.total || 0);
         setTotalPages(data.pages || 1);
       }

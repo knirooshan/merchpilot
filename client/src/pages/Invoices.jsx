@@ -86,7 +86,7 @@ const Invoices = () => {
         setTotalInvoices(data.length);
         setTotalPages(Math.ceil(data.length / pageSize) || 1);
       } else {
-        setInvoices(data.invoices || data.data || []);
+        setInvoices(data.data || []);
         setTotalInvoices(data.total || 0);
         setTotalPages(data.pages || 1);
       }

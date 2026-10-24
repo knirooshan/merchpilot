@@ -97,7 +97,6 @@ const getOrders = async (req, res) => {
       .skip((currentPage - 1) * perPage);
 
     res.json({
-      orders,
       data: orders,
       total,
       page: currentPage,

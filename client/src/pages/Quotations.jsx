@@ -57,7 +57,7 @@ const Quotations = () => {
         setTotalQuotations(data.length);
         setTotalPages(Math.ceil(data.length / pageSize) || 1);
       } else {
-        setQuotations(data.quotations || data.data || []);
+        setQuotations(data.data || []);
         setTotalQuotations(data.total || 0);
         setTotalPages(data.pages || 1);
       }

@@ -47,7 +47,7 @@ const Customers = () => {
         setTotalCustomers(data.length);
         setTotalPages(Math.ceil(data.length / pageSize) || 1);
       } else {
-        setCustomers(data.customers || data.data || []);
+        setCustomers(data.data || []);
         setTotalCustomers(data.total || 0);
         setTotalPages(data.pages || 1);
       }

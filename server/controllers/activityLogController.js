@@ -37,7 +37,6 @@ const getLogs = async (req, res) => {
       .skip(perPage * (currentPage - 1));
 
     res.json({
-      logs,
       data: logs,
       total: count,
       page: currentPage,

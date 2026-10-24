@@ -169,7 +169,6 @@ const getProducts = async (req, res) => {
       .skip((currentPage - 1) * perPage);
 
     res.json({
-      products,
       data: products,
       total,
       page: currentPage,

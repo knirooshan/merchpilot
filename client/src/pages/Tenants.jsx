@@ -49,7 +49,7 @@ const Tenants = () => {
         setTotalTenants(data.length);
         setTotalPages(1);
       } else {
-        setTenants(data.tenants || data.data || []);
+        setTenants(data.data || []);
         setTotalTenants(data.total ?? 0);
         setTotalPages(data.pages ?? 1);
       }

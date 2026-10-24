@@ -64,7 +64,7 @@ const Orders = () => {
         setTotalOrders(data.length);
         setTotalPages(Math.ceil(data.length / pageSize) || 1);
       } else {
-        setOrders(data.orders || data.data || []);
+        setOrders(data.data || []);
         setTotalOrders(data.total || 0);
         setTotalPages(data.pages || 1);
       }

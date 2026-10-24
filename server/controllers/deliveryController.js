@@ -128,7 +128,6 @@ const getDeliveryQueue = async (req, res) => {
     );
 
     res.json({
-      deliveries: paged,
       data: paged,
       total,
       page: currentPage,

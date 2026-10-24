@@ -41,8 +41,8 @@ const ActivityLog = () => {
         `${ENDPOINTS.ACTIVITY_LOGS}?${params.toString()}`,
         config,
       );
-      setLogs(data.logs || data.data || []);
-      setTotalLogs(data.total || (data.logs ? data.logs.length : 0));
+      setLogs(data.data || []);
+      setTotalLogs(data.total || (data.data ? data.data.length : 0));
       setPages(data.pages || 1);
       setLoading(false);
     } catch (error) {

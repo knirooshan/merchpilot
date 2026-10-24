@@ -86,7 +86,7 @@ const DeliveryTracking = () => {
         setQueueTotal(res.data.length);
         setQueuePages(1);
       } else {
-        setQueue(res.data.deliveries || res.data.data || []);
+        setQueue(res.data.data || []);
         setQueueTotal(res.data.total ?? 0);
         setQueuePages(res.data.pages ?? 1);
       }

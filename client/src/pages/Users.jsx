@@ -61,7 +61,7 @@ const Users = () => {
         setTotalUsers(data.length);
         setTotalPages(1);
       } else {
-        setUsers(data.users || data.data || []);
+        setUsers(data.data || []);
         setTotalUsers(data.total ?? 0);
         setTotalPages(data.pages ?? 1);
       }
