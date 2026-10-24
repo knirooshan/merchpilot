@@ -31,6 +31,7 @@ const PERIOD_LABELS = {
 };
 
 const Dashboard = () => {
+  const { user } = useSelector((state) => state.auth);
   const { data: settings } = useSelector((state) => state.settings);
   const [period, setPeriod] = useState("month");
 
