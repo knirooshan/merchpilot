@@ -27,6 +27,11 @@ import { getTaxDisplay } from "../utils/taxDisplay";
 import { urlToBase64 } from "../utils/imageUtils";
 import DeliveryUpdateModal from "../components/DeliveryUpdateModal";
 import ExportMenu from "../components/ExportMenu";
+import {
+  invalidateOnInvoiceMutation,
+  invalidateOnPaymentMutation,
+  invalidateOnDeliveryMutation,
+} from "../lib/queryInvalidation";
 import toast from "react-hot-toast";
 
 const InvoiceView = () => {
@@ -39,7 +44,7 @@ const InvoiceView = () => {
   const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
 
   const { data: invoice, isLoading } = useQuery({
-    queryKey: ["invoice", id],
+    queryKey: ["invoice", id, "view"],
     queryFn: async () => {
       const invRes = await apiClient.get(ENDPOINTS.INVOICE_BY_ID(id));
       const invoiceData = { ...invRes.data };
@@ -84,6 +89,7 @@ const InvoiceView = () => {
       return apiClient.post(ENDPOINTS.EMAIL_SEND_INVOICE(id), { pdfBase64 });
     },
     onSuccess: () => {
+      invalidateOnInvoiceMutation(queryClient);
       toast.success("Email sent successfully!");
     },
     onError: (error) => {
@@ -102,9 +108,7 @@ const InvoiceView = () => {
     },
     onSuccess: () => {
       setIsPaymentModalOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["invoice", id] });
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      invalidateOnPaymentMutation(queryClient);
       toast.success("Payment saved successfully");
     },
     onError: (error) => {
@@ -118,8 +122,7 @@ const InvoiceView = () => {
       return apiClient.put(ENDPOINTS.INVOICE_WRITE_OFF(id), {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invoice", id] });
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      invalidateOnInvoiceMutation(queryClient);
       toast.success("Invoice written off successfully");
     },
     onError: (error) => {
@@ -698,7 +701,7 @@ const InvoiceView = () => {
           onClose={() => setIsDeliveryModalOpen(false)}
           invoiceNumber={invoice.invoiceNumber}
           onSaveSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ["invoice", id] });
+            invalidateOnDeliveryMutation(queryClient);
           }}
         />
       )}

@@ -12,6 +12,7 @@ import FilterBar from "../components/FilterBar";
 import Pagination from "../components/Pagination";
 import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
+import { invalidateOnOrderMutation } from "../lib/queryInvalidation";
 
 const Orders = () => {
   const { data: settings } = useSelector((state) => state.settings);
@@ -73,7 +74,7 @@ const Orders = () => {
     },
     onSuccess: (data) => {
       toast.success(`Successfully synced ${data.orders?.length || 0} orders!`);
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      invalidateOnOrderMutation(queryClient, { includeSyncEntities: true });
     },
     onError: (err) => {
       console.error("Error syncing orders:", err);
@@ -90,8 +91,7 @@ const Orders = () => {
     },
     onSuccess: () => {
       toast.success("Order refunded successfully");
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      invalidateOnOrderMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error refunding order:", err);

@@ -11,6 +11,7 @@ import Pagination from "../components/Pagination";
 import SearchBar from "../components/SearchBar";
 import ExportMenu from "../components/ExportMenu";
 import useDebounce from "../utils/useDebounce";
+import { invalidateOnUserMutation } from "../lib/queryInvalidation";
 
 const Users = () => {
   const queryClient = useQueryClient();
@@ -85,7 +86,7 @@ const Users = () => {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["users"] });
+      invalidateOnUserMutation(queryClient);
       const msg = editingUser ? "User updated successfully!" : "User created successfully!";
       setSuccess(msg);
       toast.success(msg);
@@ -107,7 +108,7 @@ const Users = () => {
       return apiClient.delete(ENDPOINTS.USER_BY_ID(id));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["users"] });
+      invalidateOnUserMutation(queryClient);
       setSuccess("User deleted successfully!");
       toast.success("User deleted successfully!");
     },

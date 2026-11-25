@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
 import { pdf } from "@react-pdf/renderer";
@@ -23,9 +23,11 @@ import { formatDate } from "../utils/date";
 import { getTaxDisplay } from "../utils/taxDisplay";
 import { urlToBase64 } from "../utils/imageUtils";
 import ExportMenu from "../components/ExportMenu";
+import { invalidateOnQuotationMutation } from "../lib/queryInvalidation";
 import toast from "react-hot-toast";
 
 const QuotationView = () => {
+  const queryClient = useQueryClient();
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
@@ -33,7 +35,7 @@ const QuotationView = () => {
   const [downloadingPDF, setDownloadingPDF] = useState(false);
 
   const { data: quotation, isLoading } = useQuery({
-    queryKey: ["quotation", id],
+    queryKey: ["quotation", id, "view"],
     queryFn: async () => {
       const { data } = await apiClient.get(ENDPOINTS.QUOTATION_BY_ID(id));
       const quotationData = { ...data };
@@ -81,6 +83,7 @@ const QuotationView = () => {
       return apiClient.post(ENDPOINTS.EMAIL_SEND_QUOTATION(id), { pdfBase64 });
     },
     onSuccess: () => {
+      invalidateOnQuotationMutation(queryClient);
       toast.success("Email sent successfully!");
     },
     onError: (error) => {

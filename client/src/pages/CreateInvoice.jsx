@@ -22,6 +22,10 @@ import {
   fetchCustomerByIdApi,
   formatCustomerOption,
 } from "../utils/selectHelpers";
+import {
+  invalidateOnInvoiceMutation,
+  invalidateOnCustomerMutation,
+} from "../lib/queryInvalidation";
 import toast from "react-hot-toast";
 
 const CreateInvoice = () => {
@@ -194,9 +198,7 @@ const CreateInvoice = () => {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["outstandingInvoices"] });
-      queryClient.invalidateQueries({ queryKey: ["deliveryQueue"] });
+      invalidateOnInvoiceMutation(queryClient);
       toast.success("Invoice created successfully");
       navigate(`/invoices/${data._id}`);
     },
@@ -212,7 +214,7 @@ const CreateInvoice = () => {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      invalidateOnCustomerMutation(queryClient);
       const opt = formatCustomerOption(data);
       setSelectedCustomerOpt(opt);
       setFormData((prev) => ({ ...prev, customer: data._id }));

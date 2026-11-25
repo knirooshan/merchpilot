@@ -23,6 +23,10 @@ import {
   fetchCustomerByIdApi,
   formatCustomerOption,
 } from "../utils/selectHelpers";
+import {
+  invalidateOnInvoiceMutation,
+  invalidateOnCustomerMutation,
+} from "../lib/queryInvalidation";
 import toast from "react-hot-toast";
 
 const EditInvoice = () => {
@@ -67,7 +71,7 @@ const EditInvoice = () => {
   const products = productsData || [];
 
   const { data: invoiceData, isLoading: loadingInvoice } = useQuery({
-    queryKey: ["invoice", id],
+    queryKey: ["invoice", id, "edit"],
     queryFn: async () => {
       const res = await apiClient.get(ENDPOINTS.INVOICE_BY_ID(id));
       return res.data;
@@ -181,10 +185,7 @@ const EditInvoice = () => {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["invoice", id] });
-      queryClient.invalidateQueries({ queryKey: ["outstandingInvoices"] });
-      queryClient.invalidateQueries({ queryKey: ["deliveryQueue"] });
+      invalidateOnInvoiceMutation(queryClient);
       toast.success("Invoice updated successfully");
       navigate(`/invoices/${id}`);
     },
@@ -200,7 +201,7 @@ const EditInvoice = () => {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      invalidateOnCustomerMutation(queryClient);
       const opt = formatCustomerOption(data);
       setSelectedCustomerOpt(opt);
       setFormData((prev) => ({ ...prev, customer: data._id }));

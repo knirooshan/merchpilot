@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "../api/apiClient";
 import toast from "react-hot-toast";
 import { ENDPOINTS } from "../config/api";
+import { invalidateOnDeliveryMutation } from "../lib/queryInvalidation";
 
 const DeliveryUpdateModal = ({
   isOpen,
@@ -45,8 +46,7 @@ const DeliveryUpdateModal = ({
       return apiClient.put(ENDPOINTS.DELIVERY_UPDATE(id), payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["delivery", invoiceNumber] });
-      queryClient.invalidateQueries({ queryKey: ["deliveryQueue"] });
+      invalidateOnDeliveryMutation(queryClient);
       toast.success("Delivery status updated successfully");
       if (onSaveSuccess) onSaveSuccess();
       onClose();

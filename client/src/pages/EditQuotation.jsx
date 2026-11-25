@@ -22,6 +22,10 @@ import {
   fetchCustomerByIdApi,
   formatCustomerOption,
 } from "../utils/selectHelpers";
+import {
+  invalidateOnQuotationMutation,
+  invalidateOnCustomerMutation,
+} from "../lib/queryInvalidation";
 import toast from "react-hot-toast";
 
 const EditQuotation = () => {
@@ -60,7 +64,7 @@ const EditQuotation = () => {
   const products = productsData || [];
 
   const { data: quotationData, isLoading: loadingQuotation } = useQuery({
-    queryKey: ["quotation", id],
+    queryKey: ["quotation", id, "edit"],
     queryFn: async () => {
       const res = await apiClient.get(ENDPOINTS.QUOTATION_BY_ID(id));
       return res.data;
@@ -159,8 +163,7 @@ const EditQuotation = () => {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["quotations"] });
-      queryClient.invalidateQueries({ queryKey: ["quotation", id] });
+      invalidateOnQuotationMutation(queryClient);
       toast.success("Quotation updated successfully");
       navigate(`/quotations/${id}`);
     },
@@ -176,7 +179,7 @@ const EditQuotation = () => {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      invalidateOnCustomerMutation(queryClient);
       const opt = formatCustomerOption(data);
       setSelectedCustomerOpt(opt);
       setFormData((prev) => ({ ...prev, customer: data._id }));

@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
+import { useQueryClient } from "@tanstack/react-query";
 import { logout } from "../store/slices/authSlice";
-import { fetchSettings } from "../store/slices/settingsSlice";
+import { fetchSettings, clearSettings } from "../store/slices/settingsSlice";
 import { ENDPOINTS } from "../config/api";
 import {
   LayoutDashboard,
@@ -29,6 +30,7 @@ const Layout = () => {
     (state) => state.settings,
   );
   const dispatch = useDispatch();
+  const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -107,6 +109,8 @@ const Layout = () => {
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
+      queryClient.clear();
+      dispatch(clearSettings());
       dispatch(logout());
       navigate("/login");
     }

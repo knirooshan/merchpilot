@@ -1,8 +1,10 @@
 import { useState, useRef, useCallback } from "react";
 import { Upload, X, Loader, AlertCircle, CheckCircle } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import apiClient from "../api/apiClient";
 import { useSelector } from "react-redux";
 import { ENDPOINTS } from "../config/api";
+import { invalidateOnMediaMutation } from "../lib/queryInvalidation";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ACCEPTED_TYPES = [
@@ -17,6 +19,7 @@ const ACCEPTED_TYPES = [
 let nextId = 0;
 
 const MediaUpload = ({ onUploadComplete }) => {
+  const queryClient = useQueryClient();
   const { user } = useSelector((state) => state.auth);
   const [isDragging, setIsDragging] = useState(false);
   const [fileQueue, setFileQueue] = useState([]); // { id, file, status, error }
@@ -54,6 +57,7 @@ const MediaUpload = ({ onUploadComplete }) => {
 
       try {
         const response = await apiClient.post(ENDPOINTS.MEDIA_UPLOAD, formData);
+        invalidateOnMediaMutation(queryClient);
         updateFile(id, { status: "success" });
         if (onUploadComplete) {
           onUploadComplete(response.data);
@@ -68,7 +72,7 @@ const MediaUpload = ({ onUploadComplete }) => {
         updateFile(id, { status: "error", error: msg });
       }
     },
-    [user, onUploadComplete, updateFile],
+    [user, onUploadComplete, updateFile, queryClient],
   );
 
   const enqueueFiles = useCallback(

@@ -9,6 +9,7 @@ import VendorDetailModal from "../components/VendorDetailModal";
 import Pagination from "../components/Pagination";
 import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
+import { invalidateOnVendorMutation } from "../lib/queryInvalidation";
 
 const Vendors = () => {
   const queryClient = useQueryClient();
@@ -74,7 +75,7 @@ const Vendors = () => {
           : "Vendor created successfully",
       );
       setShowForm(false);
-      queryClient.invalidateQueries({ queryKey: ["vendors"] });
+      invalidateOnVendorMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error saving vendor:", err);
@@ -88,7 +89,7 @@ const Vendors = () => {
     },
     onSuccess: () => {
       toast.success("Vendor deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ["vendors"] });
+      invalidateOnVendorMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error deleting vendor:", err);

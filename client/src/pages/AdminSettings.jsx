@@ -4,6 +4,7 @@ import apiClient from "../api/apiClient";
 import { toast } from "react-hot-toast";
 import { Save, Server, Globe } from "lucide-react";
 import { ENDPOINTS } from "../config/api";
+import { invalidateOnAdminSettingsMutation } from "../lib/queryInvalidation";
 
 const AdminSettings = () => {
   const queryClient = useQueryClient();
@@ -57,7 +58,7 @@ const AdminSettings = () => {
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["adminSettings"] });
+      invalidateOnAdminSettingsMutation(queryClient);
       toast.success("Settings saved successfully");
     },
     onError: () => {
