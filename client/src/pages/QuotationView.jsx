@@ -173,63 +173,50 @@ const QuotationView = () => {
         ? `${q.customer.firstName || ""} ${q.customer.lastName || ""}`.trim()
         : q.customer?.billing?.company || "";
 
-    const cleanedItems = (q.items || []).map((item) => ({
-      name: item.name || "",
-      sku: item.sku || "",
-      description: item.description || "",
-      price: item.price ?? 0,
-      quantity: item.quantity ?? 0,
-      discount: item.discount ?? 0,
-      discountType: item.discountType || "fixed",
-      isTaxable: Boolean(item.isTaxable),
-      taxMethod: item.taxMethod || "exclusive",
-      itemTax: item.itemTax ?? 0,
-      total: item.total ?? 0,
-    }));
+    const headerContext = {
+      quotationId: q._id || "",
+      quotationNumber: q.quotationNumber,
+      status: q.status,
+      quotationDate: q.quotationDate || q.createdAt || "",
+      validUntil: q.validUntil || "",
+      customerName,
+      customerEmail: q.customer?.email || "",
+      customerPhone: q.customer?.billing?.phone || "",
+      customerTaxNumber: q.customer?.taxNumber || "",
+      currencyCode: q.currency?.code || settings?.currency?.code || "",
+      exchangeRate: q.exchangeRate?.rate ?? "",
+      quotationSubtotal: q.subtotal ?? 0,
+      quotationTax: q.tax ?? 0,
+      quotationTaxRate: q.taxRate ?? 0,
+      quotationDiscount: q.discount ?? 0,
+      deliveryCharge: q.deliveryCharge ?? 0,
+      quotationTotal: q.total ?? 0,
+      notes: q.notes || "",
+      terms: q.terms || "",
+    };
+
+    const rows =
+      Array.isArray(q.items) && q.items.length > 0
+        ? q.items.map((item) => ({
+            ...headerContext,
+            ...item,
+          }))
+        : [headerContext];
 
     return {
-      rows: cleanedItems.map((item) => ({
-        quotationNumber: q.quotationNumber,
-        customer: customerName,
-        ...item,
-      })),
+      rows,
       columns: [
         { key: "quotationNumber", label: "Quotation #" },
-        { key: "customer", label: "Customer" },
+        { key: "customerName", label: "Customer" },
         { key: "name", label: "Item" },
         { key: "sku", label: "SKU" },
         { key: "price", label: "Price" },
         { key: "quantity", label: "Quantity" },
         { key: "discount", label: "Discount" },
-        { key: "itemTax", label: "Tax" },
-        { key: "total", label: "Total" },
+        { key: "itemTax", label: "Item Tax" },
+        { key: "total", label: "Item Total" },
       ],
-      structuredData: {
-        quotationNumber: q.quotationNumber,
-        status: q.status,
-        quotationDate: q.quotationDate || q.createdAt,
-        validUntil: q.validUntil || null,
-        customer: q.customer
-          ? {
-              firstName: q.customer.firstName || "",
-              lastName: q.customer.lastName || "",
-              email: q.customer.email || "",
-              taxNumber: q.customer.taxNumber || "",
-              billing: q.customer.billing || {},
-            }
-          : null,
-        items: cleanedItems,
-        subtotal: q.subtotal ?? 0,
-        tax: q.tax ?? 0,
-        taxRate: q.taxRate ?? 0,
-        discount: q.discount ?? 0,
-        deliveryCharge: q.deliveryCharge ?? 0,
-        total: q.total ?? 0,
-        currency: q.currency || null,
-        exchangeRate: q.exchangeRate || null,
-        notes: q.notes || "",
-        terms: q.terms || "",
-      },
+      structuredData: q,
     };
   };
 
