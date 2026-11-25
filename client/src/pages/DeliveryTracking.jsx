@@ -18,6 +18,7 @@ import { useLocation } from "react-router-dom";
 import Pagination from "../components/Pagination";
 import ExportMenu from "../components/ExportMenu";
 import useDebounce from "../utils/useDebounce";
+import { invalidateOnDeliveryMutation } from "../lib/queryInvalidation";
 
 const DeliveryTracking = () => {
   const queryClient = useQueryClient();
@@ -115,8 +116,7 @@ const DeliveryTracking = () => {
     onSuccess: () => {
       toast.success("Delivery status updated successfully");
       setIsModalOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["deliveryQueue"] });
-      queryClient.invalidateQueries({ queryKey: ["deliverySearch"] });
+      invalidateOnDeliveryMutation(queryClient);
     },
     onError: (error) => {
       console.error("Error updating delivery:", error);

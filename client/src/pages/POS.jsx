@@ -11,6 +11,10 @@ import {
   fetchCustomerByIdApi,
   formatCustomerOption,
 } from "../utils/selectHelpers";
+import {
+  invalidateOnOrderMutation,
+  invalidateOnCustomerMutation,
+} from "../lib/queryInvalidation";
 import toast from "react-hot-toast";
 
 const POS = () => {
@@ -112,9 +116,7 @@ const POS = () => {
       return { order: orderRes.data, invoice: invoiceRes.data };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["products"] });
+      invalidateOnOrderMutation(queryClient, { includeSyncEntities: true });
       toast.success("Order completed successfully!");
       setCart([]);
       setDiscount(0);
@@ -137,7 +139,7 @@ const POS = () => {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      invalidateOnCustomerMutation(queryClient);
       const opt = formatCustomerOption(data);
       setSelectedCustomerOpt(opt);
       setSelectedCustomer(data._id);

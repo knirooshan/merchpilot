@@ -246,6 +246,17 @@ const OutstandingInvoices = () => {
     { key: "totalOutstanding", label: "Total Outstanding" },
   ];
 
+  const allOutstandingByCustomer = {};
+  for (const inv of data?.allInvoices || invoices) {
+    const cid = inv.customer?._id?.toString() || "unknown";
+    if (!allOutstandingByCustomer[cid]) allOutstandingByCustomer[cid] = [];
+    allOutstandingByCustomer[cid].push(inv);
+  }
+  const customerSummaryExportData = filteredCustomerSummary.map((c) => ({
+    ...c,
+    invoices: allOutstandingByCustomer[c.customerId] || [],
+  }));
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap justify-between items-center gap-3">
@@ -270,7 +281,7 @@ const OutstandingInvoices = () => {
             <ExportMenu
               filename="outstanding_customers"
               columns={outstandingCustomerExportColumns}
-              data={filteredCustomerSummary}
+              data={customerSummaryExportData}
               rootName="outstandingCustomers"
               itemName="customer"
             />

@@ -185,20 +185,23 @@ const Reports = () => {
 
   const prepareReportExport = (rawData) => {
     if (activeTab === "sales") {
-      const cleanedSalesList = (rawData?.salesData?.salesList || []).map((s) => ({
-        date: s.date,
-        invoiceNumber: s.invoice?.invoiceNumber || "",
-        customer: getCustomerDisplayName(s.customer),
-        method: s.method || "",
-        amount: s.amount ?? 0,
-      }));
+      const salesList = rawData?.salesData?.salesList || [];
+      const chartData = rawData?.salesData?.chartData || [];
 
       const csvColumns =
-        cleanedSalesList.length > 0
+        salesList.length > 0
           ? [
               { key: "date", label: "Date" },
-              { key: "invoiceNumber", label: "Invoice #" },
-              { key: "customer", label: "Customer" },
+              {
+                key: "invoiceNumber",
+                label: "Invoice #",
+                accessor: (s) => s.invoice?.invoiceNumber || "",
+              },
+              {
+                key: "customer",
+                label: "Customer",
+                accessor: (s) => getCustomerDisplayName(s.customer),
+              },
               { key: "method", label: "Method" },
               { key: "amount", label: "Amount" },
             ]
@@ -210,41 +213,27 @@ const Reports = () => {
             ];
 
       return {
-        rows:
-          cleanedSalesList.length > 0
-            ? cleanedSalesList
-            : rawData?.salesData?.chartData || [],
+        rows: salesList.length > 0 ? salesList : chartData,
         columns: csvColumns,
         structuredData: {
           reportType: "sales",
           timeframe,
           dateRange,
           summary: rawData?.stats || {},
-          chartData: rawData?.salesData?.chartData || [],
+          orderCount: rawData?.salesData?.orderCount ?? 0,
+          chartData,
           productBreakdown: rawData?.salesData?.productBreakdown || [],
-          salesList: cleanedSalesList,
+          salesList,
         },
       };
     }
 
-    const cleanedPayments = (rawData?.profitLossData?.payments || []).map((p) => ({
-      date: p.date,
-      invoiceNumber: p.invoice?.invoiceNumber || "",
-      customer: getCustomerDisplayName(p.customer),
-      method: p.method || "",
-      amount: p.amount ?? 0,
-    }));
-
-    const cleanedExpenses = (rawData?.profitLossData?.expenses || []).map((e) => ({
-      date: e.date,
-      description: e.description || "",
-      category: e.category || "",
-      paymentMethod: e.paymentMethod || "",
-      amount: e.amount ?? 0,
-    }));
+    const chartData = rawData?.profitLossData?.chartData || [];
+    const payments = rawData?.profitLossData?.payments || [];
+    const expenses = rawData?.profitLossData?.expenses || [];
 
     return {
-      rows: rawData?.profitLossData?.chartData || [],
+      rows: chartData,
       columns: [
         { key: "name", label: "Period" },
         { key: "sales", label: "Revenue" },
@@ -256,9 +245,9 @@ const Reports = () => {
         timeframe,
         dateRange,
         summary: rawData?.stats || {},
-        chartData: rawData?.profitLossData?.chartData || [],
-        payments: cleanedPayments,
-        expenses: cleanedExpenses,
+        chartData,
+        payments,
+        expenses,
       },
     };
   };

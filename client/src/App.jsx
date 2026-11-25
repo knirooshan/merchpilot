@@ -8,6 +8,8 @@ import { ENDPOINTS } from "./config/api";
 import { useEffect, useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { logout } from "./store/slices/authSlice";
+import { clearSettings } from "./store/slices/settingsSlice";
+import { queryClient } from "./lib/queryClient";
 import apiClient from "./api/apiClient";
 import { Toaster } from "react-hot-toast";
 import PrivateRoute from "./components/PrivateRoute";
@@ -57,6 +59,9 @@ function App() {
         setIsFirstRun(data.isFirstRun);
 
         if (data.isFirstRun) {
+          queryClient.clear();
+          queryClient.clear();
+          dispatch(clearSettings());
           dispatch(logout());
         }
 

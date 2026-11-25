@@ -27,6 +27,11 @@ import { getTaxDisplay } from "../utils/taxDisplay";
 import { urlToBase64 } from "../utils/imageUtils";
 import DeliveryUpdateModal from "../components/DeliveryUpdateModal";
 import ExportMenu from "../components/ExportMenu";
+import {
+  invalidateOnInvoiceMutation,
+  invalidateOnPaymentMutation,
+  invalidateOnDeliveryMutation,
+} from "../lib/queryInvalidation";
 import toast from "react-hot-toast";
 
 const InvoiceView = () => {
@@ -39,7 +44,7 @@ const InvoiceView = () => {
   const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
 
   const { data: invoice, isLoading } = useQuery({
-    queryKey: ["invoice", id],
+    queryKey: ["invoice", id, "view"],
     queryFn: async () => {
       const invRes = await apiClient.get(ENDPOINTS.INVOICE_BY_ID(id));
       const invoiceData = { ...invRes.data };
@@ -84,6 +89,7 @@ const InvoiceView = () => {
       return apiClient.post(ENDPOINTS.EMAIL_SEND_INVOICE(id), { pdfBase64 });
     },
     onSuccess: () => {
+      invalidateOnInvoiceMutation(queryClient);
       toast.success("Email sent successfully!");
     },
     onError: (error) => {
@@ -102,9 +108,7 @@ const InvoiceView = () => {
     },
     onSuccess: () => {
       setIsPaymentModalOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["invoice", id] });
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      invalidateOnPaymentMutation(queryClient);
       toast.success("Payment saved successfully");
     },
     onError: (error) => {
@@ -118,8 +122,7 @@ const InvoiceView = () => {
       return apiClient.put(ENDPOINTS.INVOICE_WRITE_OFF(id), {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invoice", id] });
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      invalidateOnInvoiceMutation(queryClient);
       toast.success("Invoice written off successfully");
     },
     onError: (error) => {
@@ -242,69 +245,61 @@ const InvoiceView = () => {
           inv.customerInfo?.company ||
           `${inv.customerInfo?.firstName || ""} ${inv.customerInfo?.lastName || ""}`.trim();
 
-    const cleanedItems = (inv.items || []).map((item) => ({
-      name: item.name || "",
-      sku: item.sku || "",
-      description: item.description || "",
-      price: item.price ?? 0,
-      quantity: item.quantity ?? 0,
-      discount: item.discount ?? 0,
-      discountType: item.discountType || "fixed",
-      isTaxable: Boolean(item.isTaxable),
-      taxMethod: item.taxMethod || "exclusive",
-      itemTax: item.itemTax ?? 0,
-      total: item.total ?? 0,
-    }));
+    const headerContext = {
+      invoiceId: inv._id || "",
+      invoiceNumber: inv.invoiceNumber,
+      taxInvoiceNumber: inv.taxInvoiceNumber || "",
+      invoiceType: inv.invoiceType,
+      status: inv.status,
+      invoiceDate: inv.invoiceDate || inv.createdAt || "",
+      dueDate: inv.dueDate || "",
+      deliveryDate: inv.deliveryDate || "",
+      reference: inv.reference || "",
+      placeOfSupply: inv.placeOfSupply || "",
+      customerName,
+      customerEmail: inv.customer?.email || inv.customerInfo?.email || "",
+      customerPhone: inv.customer?.billing?.phone || inv.customerInfo?.phone || "",
+      customerTaxNumber: inv.customer?.taxNumber || inv.customerInfo?.taxNumber || "",
+      currencyCode: inv.currency?.code || settings?.currency?.code || "",
+      exchangeRate: inv.exchangeRate?.rate ?? "",
+      invoiceSubtotal: inv.subtotal ?? 0,
+      invoiceTax: inv.tax ?? 0,
+      invoiceTaxRate: inv.taxRate ?? 0,
+      invoiceDiscount: inv.discount ?? 0,
+      deliveryCharge: inv.deliveryCharge ?? 0,
+      invoiceTotal: inv.total ?? 0,
+      amountPaid: inv.amountPaid ?? 0,
+      balanceDue,
+      isWrittenOff: Boolean(inv.isWrittenOff),
+      paymentMethod: inv.paymentMethod || "",
+      notes: inv.notes || "",
+      terms: inv.terms || "",
+    };
+
+    const rows =
+      Array.isArray(inv.items) && inv.items.length > 0
+        ? inv.items.map((item) => ({
+            ...headerContext,
+            ...item,
+          }))
+        : [headerContext];
 
     return {
-      rows: cleanedItems.map((item) => ({
-        invoiceNumber: inv.invoiceNumber,
-        customer: customerName,
-        ...item,
-      })),
+      rows,
       columns: [
         { key: "invoiceNumber", label: "Invoice #" },
-        { key: "customer", label: "Customer" },
+        { key: "customerName", label: "Customer" },
         { key: "name", label: "Item" },
         { key: "sku", label: "SKU" },
         { key: "price", label: "Price" },
         { key: "quantity", label: "Quantity" },
         { key: "discount", label: "Discount" },
-        { key: "itemTax", label: "Tax" },
-        { key: "total", label: "Total" },
+        { key: "itemTax", label: "Item Tax" },
+        { key: "total", label: "Item Total" },
       ],
       structuredData: {
-        invoiceNumber: inv.invoiceNumber,
-        taxInvoiceNumber: inv.taxInvoiceNumber || "",
-        invoiceType: inv.invoiceType,
-        status: inv.status,
-        invoiceDate: inv.invoiceDate || inv.createdAt,
-        dueDate: inv.dueDate || null,
-        reference: inv.reference || "",
-        placeOfSupply: inv.placeOfSupply || "",
-        customer: inv.customer
-          ? {
-              firstName: inv.customer.firstName || "",
-              lastName: inv.customer.lastName || "",
-              email: inv.customer.email || "",
-              taxNumber: inv.customer.taxNumber || "",
-              billing: inv.customer.billing || {},
-            }
-          : null,
-        customerInfo: inv.customerInfo || null,
-        items: cleanedItems,
-        subtotal: inv.subtotal ?? 0,
-        tax: inv.tax ?? 0,
-        taxRate: inv.taxRate ?? 0,
-        discount: inv.discount ?? 0,
-        deliveryCharge: inv.deliveryCharge ?? 0,
-        total: inv.total ?? 0,
-        amountPaid: inv.amountPaid ?? 0,
+        ...inv,
         balanceDue,
-        currency: inv.currency || null,
-        exchangeRate: inv.exchangeRate || null,
-        notes: inv.notes || "",
-        terms: inv.terms || "",
       },
     };
   };
@@ -698,7 +693,7 @@ const InvoiceView = () => {
           onClose={() => setIsDeliveryModalOpen(false)}
           invoiceNumber={invoice.invoiceNumber}
           onSaveSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ["invoice", id] });
+            invalidateOnDeliveryMutation(queryClient);
           }}
         />
       )}

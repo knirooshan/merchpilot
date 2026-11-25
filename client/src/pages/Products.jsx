@@ -18,6 +18,7 @@ import ProductForm from "../components/ProductForm";
 import Pagination from "../components/Pagination";
 import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
+import { invalidateOnProductMutation } from "../lib/queryInvalidation";
 
 const Products = () => {
   const { data: settings } = useSelector((state) => state.settings);
@@ -76,7 +77,7 @@ const Products = () => {
     },
     onSuccess: () => {
       toast.success("Products synced successfully");
-      queryClient.invalidateQueries({ queryKey: ["products"] });
+      invalidateOnProductMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error syncing products:", err);
@@ -92,7 +93,7 @@ const Products = () => {
     },
     onSuccess: (data) => {
       toast.success(`Pushed to Medusa! ID: ${data.medusaId}`);
-      queryClient.invalidateQueries({ queryKey: ["products"] });
+      invalidateOnProductMutation(queryClient);
     },
     onError: (err) => {
       console.error("Medusa push error:", err);
@@ -110,7 +111,7 @@ const Products = () => {
     },
     onSuccess: (data) => {
       toast.success(data.message || "All products pushed to Medusa");
-      queryClient.invalidateQueries({ queryKey: ["products"] });
+      invalidateOnProductMutation(queryClient);
     },
     onError: (err) => {
       console.error("Medusa bulk push error:", err);
@@ -130,7 +131,7 @@ const Products = () => {
     },
     onSuccess: () => {
       toast.success("Medusa sync updated");
-      queryClient.invalidateQueries({ queryKey: ["products"] });
+      invalidateOnProductMutation(queryClient);
     },
     onError: (err) => {
       console.error("Toggle error:", err);
@@ -144,7 +145,7 @@ const Products = () => {
     },
     onSuccess: () => {
       toast.success("Product deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ["products"] });
+      invalidateOnProductMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error deleting product:", err);
@@ -169,7 +170,7 @@ const Products = () => {
           : "Product created successfully",
       );
       setShowForm(false);
-      queryClient.invalidateQueries({ queryKey: ["products"] });
+      invalidateOnProductMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error saving product:", err);

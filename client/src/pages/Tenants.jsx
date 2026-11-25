@@ -8,6 +8,7 @@ import Pagination from "../components/Pagination";
 import SearchBar from "../components/SearchBar";
 import ExportMenu from "../components/ExportMenu";
 import useDebounce from "../utils/useDebounce";
+import { invalidateOnTenantMutation } from "../lib/queryInvalidation";
 
 const Tenants = () => {
   const queryClient = useQueryClient();
@@ -64,7 +65,7 @@ const Tenants = () => {
       return apiClient.post(ENDPOINTS.TENANTS, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      invalidateOnTenantMutation(queryClient);
       toast.success("Tenant created successfully");
       setFormData({ name: "", subdomain: "", email: "" });
       setModalOpen(false);
@@ -80,7 +81,7 @@ const Tenants = () => {
       return { data, tenant };
     },
     onSuccess: ({ data, tenant }) => {
-      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      invalidateOnTenantMutation(queryClient);
       setPasskeyModal({
         passkey: data.setupPasskey,
         tenant,
@@ -99,7 +100,7 @@ const Tenants = () => {
       return tenant;
     },
     onSuccess: (tenant) => {
-      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      invalidateOnTenantMutation(queryClient);
       toast.success(`Tenant ${tenant.isActive ? "disabled" : "enabled"}`);
     },
     onError: () => {
@@ -113,6 +114,7 @@ const Tenants = () => {
       return data;
     },
     onSuccess: (data) => {
+      invalidateOnTenantMutation(queryClient);
       toast.success(data.message || "Email sent successfully");
     },
     onError: (error) => {
@@ -125,7 +127,7 @@ const Tenants = () => {
       return apiClient.delete(ENDPOINTS.TENANT_BY_ID(id));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      invalidateOnTenantMutation(queryClient);
       toast.success("Tenant deleted successfully");
     },
     onError: () => {

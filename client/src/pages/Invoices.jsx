@@ -24,6 +24,10 @@ import ErrorBoundary from "../ErrorBoundary";
 import Pagination from "../components/Pagination";
 import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
+import {
+  invalidateOnInvoiceMutation,
+  invalidateOnPaymentMutation,
+} from "../lib/queryInvalidation";
 
 const STATUS_STYLES = {
   draft: "bg-slate-800 text-slate-400 border border-slate-700",
@@ -106,7 +110,7 @@ const Invoices = () => {
       toast.success("Payment recorded successfully");
       setIsPaymentModalOpen(false);
       setSelectedInvoice(null);
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      invalidateOnPaymentMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error saving payment:", err);
@@ -124,7 +128,7 @@ const Invoices = () => {
     },
     onSuccess: () => {
       toast.success("Invoice deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      invalidateOnInvoiceMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error deleting invoice:", err);

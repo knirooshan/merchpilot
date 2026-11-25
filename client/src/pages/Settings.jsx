@@ -6,6 +6,7 @@ import apiClient from "../api/apiClient";
 import { Save } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { fetchSettings } from "../store/slices/settingsSlice";
+import { invalidateOnSettingsMutation } from "../lib/queryInvalidation";
 
 import MediaLibraryModal from "../components/MediaLibraryModal";
 import RichTextEditor from "../components/RichTextEditor";
@@ -70,7 +71,7 @@ const Settings = () => {
       setMessage("Settings saved successfully!");
       toast.success("Settings saved successfully!");
       dispatch(fetchSettings());
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      invalidateOnSettingsMutation(queryClient);
       setTimeout(() => setMessage(""), 3000);
     },
     onError: (err) => {

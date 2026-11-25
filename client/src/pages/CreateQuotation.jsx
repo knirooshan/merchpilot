@@ -22,6 +22,10 @@ import {
   fetchCustomerByIdApi,
   formatCustomerOption,
 } from "../utils/selectHelpers";
+import {
+  invalidateOnQuotationMutation,
+  invalidateOnCustomerMutation,
+} from "../lib/queryInvalidation";
 import toast from "react-hot-toast";
 
 const CreateQuotation = () => {
@@ -110,7 +114,7 @@ const CreateQuotation = () => {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["quotations"] });
+      invalidateOnQuotationMutation(queryClient);
       toast.success("Quotation created successfully");
       navigate(`/quotations/${data._id}`);
     },
@@ -126,7 +130,7 @@ const CreateQuotation = () => {
       return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      invalidateOnCustomerMutation(queryClient);
       const opt = formatCustomerOption(data);
       setSelectedCustomerOpt(opt);
       setFormData((prev) => ({ ...prev, customer: data._id }));

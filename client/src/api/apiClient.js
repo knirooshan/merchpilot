@@ -2,6 +2,8 @@ import axios from "axios";
 import { API_URL } from "../config/api";
 import { store } from "../store/store";
 import { logout } from "../store/slices/authSlice";
+import { clearSettings } from "../store/slices/settingsSlice";
+import { queryClient } from "../lib/queryClient";
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -61,6 +63,9 @@ apiClient.interceptors.response.use(
     if (status === 401) {
       const code = data?.code;
       if (code === "INVALID_TOKEN" || code === "NO_TOKEN" || !code) {
+        queryClient.clear();
+        queryClient.clear();
+        store.dispatch(clearSettings());
         store.dispatch(logout());
       }
     }

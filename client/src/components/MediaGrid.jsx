@@ -3,14 +3,15 @@ import { Trash2, Check } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "../api/apiClient";
 import { ENDPOINTS } from "../config/api";
+import { invalidateOnMediaMutation } from "../lib/queryInvalidation";
 import toast from "react-hot-toast";
 
-const MediaGrid = ({ onSelect, selectable = false, refreshTrigger }) => {
+const MediaGrid = ({ onSelect, selectable = false }) => {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState(null);
 
   const { data: mediaData, isLoading: loading } = useQuery({
-    queryKey: ["media", refreshTrigger],
+    queryKey: ["media"],
     queryFn: async () => {
       const response = await apiClient.get(ENDPOINTS.MEDIA);
       return Array.isArray(response.data) ? response.data : response.data?.data || [];
@@ -21,7 +22,7 @@ const MediaGrid = ({ onSelect, selectable = false, refreshTrigger }) => {
   const deleteMutation = useMutation({
     mutationFn: (id) => apiClient.delete(ENDPOINTS.MEDIA_BY_ID(id)),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["media"] });
+      invalidateOnMediaMutation(queryClient);
       toast.success("Image deleted");
     },
     onError: (error) => {

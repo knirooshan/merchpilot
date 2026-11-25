@@ -21,6 +21,10 @@ import {
   fetchVendorByIdApi,
   formatVendorOption,
 } from "../utils/selectHelpers";
+import {
+  invalidateOnExpenseMutation,
+  invalidateOnVendorMutation,
+} from "../lib/queryInvalidation";
 
 const Expenses = () => {
   const { user } = useSelector((state) => state.auth);
@@ -171,7 +175,7 @@ const Expenses = () => {
       toast.success("Expense added successfully");
       setShowForm(false);
       resetForm();
-      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      invalidateOnExpenseMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error creating expense:", err);
@@ -194,7 +198,7 @@ const Expenses = () => {
       setEditingExpense(null);
       setPendingUpdate(null);
       resetForm();
-      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      invalidateOnExpenseMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error updating expense:", err);
@@ -216,7 +220,7 @@ const Expenses = () => {
       setSelectedVendorOpt(opt);
       setFormData((prev) => ({ ...prev, vendor: data._id }));
       setShowVendorModal(false);
-      queryClient.invalidateQueries({ queryKey: ["vendors"] });
+      invalidateOnVendorMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error creating vendor:", err);
@@ -230,7 +234,7 @@ const Expenses = () => {
     },
     onSuccess: () => {
       toast.success("Expense deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      invalidateOnExpenseMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error deleting expense:", err);

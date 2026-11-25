@@ -14,6 +14,7 @@ import Pagination from "../components/Pagination";
 import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
 import { ENDPOINTS } from "../config/api";
+import { invalidateOnPaymentMutation } from "../lib/queryInvalidation";
 
 const Payments = () => {
   const { user } = useSelector((state) => state.auth);
@@ -86,8 +87,7 @@ const Payments = () => {
       setIsPaymentModalOpen(false);
       setSelectedPayment(null);
       setSelectedInvoice(null);
-      queryClient.invalidateQueries({ queryKey: ["payments"] });
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      invalidateOnPaymentMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error saving payment:", err);
@@ -106,8 +106,7 @@ const Payments = () => {
       setShowReasonModal(false);
       setSelectedPayment(null);
       setSelectedInvoice(null);
-      queryClient.invalidateQueries({ queryKey: ["payments"] });
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      invalidateOnPaymentMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error updating payment:", err);
@@ -121,8 +120,7 @@ const Payments = () => {
     },
     onSuccess: () => {
       toast.success("Payment deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ["payments"] });
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      invalidateOnPaymentMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error deleting payment:", err);

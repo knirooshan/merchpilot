@@ -3,7 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 2, // 2 minutes: cache fresh data to avoid redundant refetches
+      staleTime: 0, // Revalidate stale queries on mount while rendering cached data immediately
       gcTime: 1000 * 60 * 10, // 10 minutes: keep unused queries in cache before garbage collection
       retry: (failureCount, error) => {
         // Do not retry 4xx errors (unauthorized, not found, validation error)

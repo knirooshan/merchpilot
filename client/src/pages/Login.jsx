@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch } from "react-redux";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { setUser } from "../store/slices/authSlice";
 import { fetchSettings } from "../store/slices/settingsSlice";
 import { ENDPOINTS } from "../config/api";
@@ -13,6 +13,7 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const dispatch = useDispatch();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
 
   const loginMutation = useMutation({
@@ -21,6 +22,7 @@ const Login = () => {
       return data;
     },
     onSuccess: async (data) => {
+      queryClient.clear();
       dispatch(setUser(data));
       await dispatch(fetchSettings());
       navigate("/");

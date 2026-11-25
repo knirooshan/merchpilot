@@ -179,7 +179,7 @@ const getExpenses = async (req, res) => {
 
     if (!isPaginated) {
       const expenses = await Expense.find(filter)
-        .populate("vendor", "name")
+        .populate("vendor", "name email phone contactPerson address")
         .sort({ date: -1, createdAt: -1 });
       return res.json(expenses);
     }
@@ -189,7 +189,7 @@ const getExpenses = async (req, res) => {
 
     const total = await Expense.countDocuments(filter);
     const expenses = await Expense.find(filter)
-      .populate("vendor", "name")
+      .populate("vendor", "name email phone contactPerson address")
       .sort({ date: -1, createdAt: -1 })
       .limit(perPage)
       .skip((currentPage - 1) * perPage);

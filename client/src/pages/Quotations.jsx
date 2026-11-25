@@ -13,6 +13,7 @@ import FilterBar from "../components/FilterBar";
 import Pagination from "../components/Pagination";
 import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
+import { invalidateOnQuotationMutation } from "../lib/queryInvalidation";
 
 const Quotations = () => {
   const { data: settings } = useSelector((state) => state.settings);
@@ -79,7 +80,7 @@ const Quotations = () => {
     },
     onSuccess: () => {
       toast.success("Quotation deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ["quotations"] });
+      invalidateOnQuotationMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error deleting quotation:", err);

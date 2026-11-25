@@ -11,6 +11,7 @@ import SearchBar from "../components/SearchBar";
 import Pagination from "../components/Pagination";
 import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
+import { invalidateOnCustomerMutation } from "../lib/queryInvalidation";
 
 const Customers = () => {
   const { user } = useSelector((state) => state.auth);
@@ -77,7 +78,7 @@ const Customers = () => {
           : "Customer created successfully",
       );
       closeModal();
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      invalidateOnCustomerMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error saving customer:", err);
@@ -91,7 +92,7 @@ const Customers = () => {
     },
     onSuccess: () => {
       toast.success("Customer deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      invalidateOnCustomerMutation(queryClient);
     },
     onError: (err) => {
       console.error("Error deleting customer:", err);
