@@ -11,6 +11,7 @@ import { formatDate } from "../utils/date";
 import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
 import Pagination from "../components/Pagination";
+import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
 
 const Quotations = () => {
@@ -113,6 +114,50 @@ const Quotations = () => {
     });
   };
 
+  const fetchQuotationsForExport = async () => {
+    const params = {
+      ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+      ...(filters.status !== "all" ? { status: filters.status } : {}),
+      ...(filters.startDate ? { startDate: filters.startDate } : {}),
+      ...(filters.endDate ? { endDate: filters.endDate } : {}),
+    };
+    const res = await apiClient.get(ENDPOINTS.QUOTATIONS, { params });
+    return Array.isArray(res.data) ? res.data : res.data?.data || [];
+  };
+
+  const quotationExportColumns = [
+    { key: "quotationNumber", label: "Quotation #" },
+    {
+      key: "customer",
+      label: "Customer",
+      accessor: (q) =>
+        q.customer?.firstName || q.customer?.lastName
+          ? `${q.customer.firstName || ""} ${q.customer.lastName || ""}`.trim()
+          : q.customer?.billing?.company || "",
+    },
+    {
+      key: "customerEmail",
+      label: "Customer Email",
+      accessor: (q) => q.customer?.email || "",
+    },
+    {
+      key: "quotationDate",
+      label: "Quotation Date",
+      accessor: (q) => q.quotationDate || q.createdAt || "",
+    },
+    { key: "validUntil", label: "Valid Until" },
+    { key: "subtotal", label: "Subtotal" },
+    { key: "tax", label: "Tax" },
+    { key: "discount", label: "Discount" },
+    { key: "total", label: "Total" },
+    {
+      key: "currency",
+      label: "Currency",
+      accessor: (q) => q.currency?.code || settings?.currency?.code || "",
+    },
+    { key: "status", label: "Status" },
+  ];
+
   if (isLoading) return <div className="text-white">Loading quotations...</div>;
 
   if (error && !quotationsData) {
@@ -128,7 +173,7 @@ const Quotations = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-white">Quotations</h1>
           {isFetching && !isLoading && (
@@ -137,13 +182,22 @@ const Quotations = () => {
             </span>
           )}
         </div>
-        <Link
-          to="/quotations/create"
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="mr-2 h-5 w-5" />
-          Create Quotation
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <ExportMenu
+            filename="quotations"
+            columns={quotationExportColumns}
+            fetchData={fetchQuotationsForExport}
+            rootName="quotations"
+            itemName="quotation"
+          />
+          <Link
+            to="/quotations/create"
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            Create Quotation
+          </Link>
+        </div>
       </div>
 
       {/* Search and Filters */}

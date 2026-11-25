@@ -22,6 +22,7 @@ import StatsCard from "../components/StatsCard";
 import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
 import Pagination from "../components/Pagination";
+import ExportMenu from "../components/ExportMenu";
 import useDebounce from "../utils/useDebounce";
 
 const statusStyles = {
@@ -197,9 +198,57 @@ const OutstandingInvoices = () => {
     invoicesByCustomer[id].push(inv);
   }
 
+  const fetchOutstandingInvoicesForExport = async () => {
+    const params = {
+      ...(debouncedInvoiceSearch ? { search: debouncedInvoiceSearch } : {}),
+      ...(filters.startDate ? { startDate: filters.startDate } : {}),
+      ...(filters.endDate ? { endDate: filters.endDate } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.customer ? { customer: filters.customer } : {}),
+    };
+    const res = await apiClient.get(ENDPOINTS.REPORTS_OUTSTANDING, { params });
+    return res.data?.invoices || [];
+  };
+
+  const outstandingInvoiceExportColumns = [
+    { key: "invoiceNumber", label: "Invoice #" },
+    { key: "taxInvoiceNumber", label: "Tax Invoice #" },
+    {
+      key: "customer",
+      label: "Customer",
+      accessor: (inv) =>
+        inv.customer
+          ? `${inv.customer.firstName || ""} ${inv.customer.lastName || ""}`.trim() ||
+            inv.customer.billing?.company ||
+            ""
+          : inv.customerInfo?.company ||
+            `${inv.customerInfo?.firstName || ""} ${inv.customerInfo?.lastName || ""}`.trim(),
+    },
+    {
+      key: "email",
+      label: "Email",
+      accessor: (inv) => inv.customer?.email || inv.customerInfo?.email || "",
+    },
+    { key: "invoiceDate", label: "Invoice Date" },
+    { key: "dueDate", label: "Due Date" },
+    { key: "daysOverdue", label: "Days Overdue" },
+    { key: "total", label: "Total" },
+    { key: "amountPaid", label: "Amount Paid" },
+    { key: "balanceDue", label: "Balance Due" },
+    { key: "status", label: "Status" },
+  ];
+
+  const outstandingCustomerExportColumns = [
+    { key: "customerName", label: "Customer" },
+    { key: "email", label: "Email" },
+    { key: "invoiceCount", label: "Invoice Count" },
+    { key: "overdueCount", label: "Overdue Count" },
+    { key: "totalOutstanding", label: "Total Outstanding" },
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-white">Outstanding Invoices</h1>
           {isFetching && !loading && (
@@ -208,7 +257,24 @@ const OutstandingInvoices = () => {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {viewMode === "invoices" ? (
+            <ExportMenu
+              filename="outstanding_invoices"
+              columns={outstandingInvoiceExportColumns}
+              fetchData={fetchOutstandingInvoicesForExport}
+              rootName="outstandingInvoices"
+              itemName="invoice"
+            />
+          ) : (
+            <ExportMenu
+              filename="outstanding_customers"
+              columns={outstandingCustomerExportColumns}
+              data={filteredCustomerSummary}
+              rootName="outstandingCustomers"
+              itemName="customer"
+            />
+          )}
           <button
             onClick={handleDownloadPDF}
             disabled={downloadPdfMutation.isPending}

@@ -6,6 +6,7 @@ import { toast } from "react-hot-toast";
 import { Plus, Key, Power, Trash, Mail, Copy } from "lucide-react";
 import Pagination from "../components/Pagination";
 import SearchBar from "../components/SearchBar";
+import ExportMenu from "../components/ExportMenu";
 import useDebounce from "../utils/useDebounce";
 
 const Tenants = () => {
@@ -164,6 +165,32 @@ const Tenants = () => {
     deleteTenantMutation.mutate(id);
   };
 
+  const fetchTenantsForExport = async () => {
+    const params = {
+      ...(debouncedSearchTerm ? { search: debouncedSearchTerm } : {}),
+      ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+    };
+    const { data } = await apiClient.get(ENDPOINTS.TENANTS, { params });
+    return Array.isArray(data) ? data : data?.data || [];
+  };
+
+  const tenantExportColumns = [
+    { key: "name", label: "Name" },
+    { key: "subdomain", label: "Subdomain" },
+    { key: "email", label: "Email" },
+    {
+      key: "status",
+      label: "Status",
+      accessor: (t) => (t.isActive ? "Active" : "Disabled"),
+    },
+    {
+      key: "setupCompleted",
+      label: "Setup Completed",
+      accessor: (t) => Boolean(t.isSetupComplete),
+    },
+    { key: "createdAt", label: "Created At" },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
@@ -173,7 +200,14 @@ const Tenants = () => {
             Manage all organizations and their access.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <ExportMenu
+            filename="tenants"
+            columns={tenantExportColumns}
+            fetchData={fetchTenantsForExport}
+            rootName="tenants"
+            itemName="tenant"
+          />
           <button
             onClick={() => setModalOpen(true)}
             className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"

@@ -19,6 +19,7 @@ import { formatCurrency } from "../utils/currency";
 import { formatDate } from "../utils/date";
 import { Calendar, Download, Filter, FileText } from "lucide-react";
 import DateInput from "../components/DateInput";
+import ExportMenu from "../components/ExportMenu";
 import toast from "react-hot-toast";
 
 const CustomLegend = ({ payload }) => {
@@ -174,6 +175,94 @@ const Reports = () => {
     downloadPdfMutation.mutate();
   };
 
+  const getCustomerDisplayName = (customer) => {
+    if (!customer) return "";
+    if (customer.firstName || customer.lastName) {
+      return `${customer.firstName || ""} ${customer.lastName || ""}`.trim();
+    }
+    return customer.billing?.company || "";
+  };
+
+  const prepareReportExport = (rawData) => {
+    if (activeTab === "sales") {
+      const cleanedSalesList = (rawData?.salesData?.salesList || []).map((s) => ({
+        date: s.date,
+        invoiceNumber: s.invoice?.invoiceNumber || "",
+        customer: getCustomerDisplayName(s.customer),
+        method: s.method || "",
+        amount: s.amount ?? 0,
+      }));
+
+      const csvColumns =
+        cleanedSalesList.length > 0
+          ? [
+              { key: "date", label: "Date" },
+              { key: "invoiceNumber", label: "Invoice #" },
+              { key: "customer", label: "Customer" },
+              { key: "method", label: "Method" },
+              { key: "amount", label: "Amount" },
+            ]
+          : [
+              { key: "name", label: "Period" },
+              { key: "sales", label: "Sales" },
+              { key: "expenses", label: "Expenses" },
+              { key: "profit", label: "Profit" },
+            ];
+
+      return {
+        rows:
+          cleanedSalesList.length > 0
+            ? cleanedSalesList
+            : rawData?.salesData?.chartData || [],
+        columns: csvColumns,
+        structuredData: {
+          reportType: "sales",
+          timeframe,
+          dateRange,
+          summary: rawData?.stats || {},
+          chartData: rawData?.salesData?.chartData || [],
+          productBreakdown: rawData?.salesData?.productBreakdown || [],
+          salesList: cleanedSalesList,
+        },
+      };
+    }
+
+    const cleanedPayments = (rawData?.profitLossData?.payments || []).map((p) => ({
+      date: p.date,
+      invoiceNumber: p.invoice?.invoiceNumber || "",
+      customer: getCustomerDisplayName(p.customer),
+      method: p.method || "",
+      amount: p.amount ?? 0,
+    }));
+
+    const cleanedExpenses = (rawData?.profitLossData?.expenses || []).map((e) => ({
+      date: e.date,
+      description: e.description || "",
+      category: e.category || "",
+      paymentMethod: e.paymentMethod || "",
+      amount: e.amount ?? 0,
+    }));
+
+    return {
+      rows: rawData?.profitLossData?.chartData || [],
+      columns: [
+        { key: "name", label: "Period" },
+        { key: "sales", label: "Revenue" },
+        { key: "expenses", label: "Expenses" },
+        { key: "profit", label: "Profit" },
+      ],
+      structuredData: {
+        reportType: "profit-loss",
+        timeframe,
+        dateRange,
+        summary: rawData?.stats || {},
+        chartData: rawData?.profitLossData?.chartData || [],
+        payments: cleanedPayments,
+        expenses: cleanedExpenses,
+      },
+    };
+  };
+
   if (loading && !stats)
     return <div className="text-white p-6">Loading reports...</div>;
 
@@ -188,16 +277,38 @@ const Reports = () => {
             </span>
           )}
         </div>
-        <button
-          onClick={handleDownloadPDF}
-          disabled={downloadPdfMutation.isPending}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium disabled:opacity-50"
-        >
-          <Download size={18} />
-          {downloadPdfMutation.isPending
-            ? "Downloading..."
-            : `Download ${activeTab === "sales" ? "Sales" : "P&L"} PDF`}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <ExportMenu
+            filename={
+              activeTab === "sales"
+                ? `sales_report_${timeframe}`
+                : `profit_loss_report_${timeframe}`
+            }
+            data={
+              activeTab === "sales"
+                ? salesData
+                  ? { stats, salesData }
+                  : null
+                : profitLossData
+                  ? { stats, profitLossData }
+                  : null
+            }
+            prepareExport={prepareReportExport}
+            rootName={activeTab === "sales" ? "salesReport" : "profitLossReport"}
+            itemName="record"
+            disabled={activeTab === "sales" ? !salesData : !profitLossData}
+          />
+          <button
+            onClick={handleDownloadPDF}
+            disabled={downloadPdfMutation.isPending}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium disabled:opacity-50"
+          >
+            <Download size={18} />
+            {downloadPdfMutation.isPending
+              ? "Downloading..."
+              : `Download ${activeTab === "sales" ? "Sales" : "P&L"} PDF`}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}

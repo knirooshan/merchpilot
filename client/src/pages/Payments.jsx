@@ -11,6 +11,7 @@ import ReasonModal from "../components/ReasonModal";
 import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
 import Pagination from "../components/Pagination";
+import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
 import { ENDPOINTS } from "../config/api";
 
@@ -223,9 +224,49 @@ const Payments = () => {
     }
   };
 
+  const fetchPaymentsForExport = async () => {
+    const params = {
+      ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+      ...(filters.method !== "all" ? { method: filters.method } : {}),
+      ...(filters.source !== "all" ? { source: filters.source } : {}),
+      ...(filters.startDate ? { startDate: filters.startDate } : {}),
+      ...(filters.endDate ? { endDate: filters.endDate } : {}),
+    };
+    const res = await apiClient.get(ENDPOINTS.PAYMENTS, { params });
+    return Array.isArray(res.data) ? res.data : res.data?.data || [];
+  };
+
+  const paymentExportColumns = [
+    { key: "date", label: "Date" },
+    {
+      key: "invoiceNumber",
+      label: "Invoice #",
+      accessor: (p) => p.invoice?.invoiceNumber || "",
+    },
+    {
+      key: "orderNumber",
+      label: "Order #",
+      accessor: (p) => p.order?.orderNumber || "",
+    },
+    {
+      key: "customer",
+      label: "Customer",
+      accessor: (p) =>
+        p.customer?.firstName || p.customer?.lastName
+          ? `${p.customer.firstName || ""} ${p.customer.lastName || ""}`.trim()
+          : p.customer?.billing?.company || "",
+    },
+    { key: "method", label: "Method" },
+    { key: "source", label: "Source" },
+    { key: "reference", label: "Reference" },
+    { key: "amount", label: "Amount" },
+    { key: "status", label: "Status" },
+    { key: "notes", label: "Notes" },
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-white">Payments</h1>
           {isFetching && !isLoading && (
@@ -234,13 +275,22 @@ const Payments = () => {
             </span>
           )}
         </div>
-        <button
-          onClick={handleCreate}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="mr-2 h-5 w-5" />
-          Create Payment
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <ExportMenu
+            filename="payments"
+            columns={paymentExportColumns}
+            fetchData={fetchPaymentsForExport}
+            rootName="payments"
+            itemName="payment"
+          />
+          <button
+            onClick={handleCreate}
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            Create Payment
+          </button>
+        </div>
       </div>
 
       {/* Search and Filters */}

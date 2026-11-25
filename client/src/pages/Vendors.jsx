@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import VendorForm from "../components/VendorForm";
 import VendorDetailModal from "../components/VendorDetailModal";
 import Pagination from "../components/Pagination";
+import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
 
 const Vendors = () => {
@@ -128,6 +129,23 @@ const Vendors = () => {
     );
   }
 
+  const fetchVendorsForExport = async () => {
+    const params = {
+      ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+    };
+    const res = await apiClient.get(ENDPOINTS.VENDORS, { params });
+    return Array.isArray(res.data) ? res.data : res.data?.data || [];
+  };
+
+  const vendorExportColumns = [
+    { key: "name", label: "Name" },
+    { key: "contactPerson", label: "Contact Person" },
+    { key: "email", label: "Email" },
+    { key: "phone", label: "Phone" },
+    { key: "address", label: "Address" },
+    { key: "createdAt", label: "Created At" },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
@@ -139,13 +157,22 @@ const Vendors = () => {
             </span>
           )}
         </div>
-        <button
-          onClick={handleAdd}
-          className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-        >
-          <Plus className="mr-2 h-5 w-5" />
-          Add Vendor
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <ExportMenu
+            filename="vendors"
+            columns={vendorExportColumns}
+            fetchData={fetchVendorsForExport}
+            rootName="vendors"
+            itemName="vendor"
+          />
+          <button
+            onClick={handleAdd}
+            className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            Add Vendor
+          </button>
+        </div>
       </div>
 
       {/* Search */}

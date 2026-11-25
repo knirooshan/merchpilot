@@ -12,6 +12,7 @@ import { formatCurrency } from "../utils/currency";
 import { formatDate } from "../utils/date";
 import DateInput from "../components/DateInput";
 import Pagination from "../components/Pagination";
+import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
 import { ENDPOINTS } from "../config/api";
 import SearchableSelect from "../components/SearchableSelect";
@@ -305,9 +306,40 @@ const Expenses = () => {
     );
   }
 
+  const fetchExpensesForExport = async () => {
+    const params = {
+      ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+      ...(filters.category !== "all" ? { category: filters.category } : {}),
+      ...(filters.vendor !== "all" ? { vendor: filters.vendor } : {}),
+      ...(filters.startDate ? { startDate: filters.startDate } : {}),
+      ...(filters.endDate ? { endDate: filters.endDate } : {}),
+    };
+    const res = await apiClient.get(ENDPOINTS.EXPENSES, { params });
+    return Array.isArray(res.data) ? res.data : res.data?.data || [];
+  };
+
+  const expenseExportColumns = [
+    { key: "date", label: "Date" },
+    { key: "description", label: "Description" },
+    { key: "category", label: "Category" },
+    {
+      key: "vendor",
+      label: "Vendor",
+      accessor: (e) => e.vendor?.name || "",
+    },
+    {
+      key: "paymentMethod",
+      label: "Payment Method",
+      accessor: (e) => e.paymentMethod || "Cash",
+    },
+    { key: "reference", label: "Reference" },
+    { key: "amount", label: "Amount" },
+    { key: "notes", label: "Notes" },
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-white">Expenses</h1>
           {isFetching && !isLoading && (
@@ -316,13 +348,22 @@ const Expenses = () => {
             </span>
           )}
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="mr-2 h-5 w-5" />
-          {"Add Expense"}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <ExportMenu
+            filename="expenses"
+            columns={expenseExportColumns}
+            fetchData={fetchExpensesForExport}
+            rootName="expenses"
+            itemName="expense"
+          />
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            {"Add Expense"}
+          </button>
+        </div>
       </div>
 
       {/* Search and Filters */}

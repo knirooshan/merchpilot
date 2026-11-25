@@ -26,6 +26,7 @@ import { formatDate } from "../utils/date";
 import { getTaxDisplay } from "../utils/taxDisplay";
 import { urlToBase64 } from "../utils/imageUtils";
 import DeliveryUpdateModal from "../components/DeliveryUpdateModal";
+import ExportMenu from "../components/ExportMenu";
 import toast from "react-hot-toast";
 
 const InvoiceView = () => {
@@ -233,16 +234,91 @@ const InvoiceView = () => {
       ? invoice.balanceDue
       : invoice.total - (invoice.amountPaid || 0);
 
+  const prepareInvoiceExport = (inv) => {
+    const customerName =
+      inv.customer?.firstName || inv.customer?.lastName
+        ? `${inv.customer.firstName || ""} ${inv.customer.lastName || ""}`.trim()
+        : inv.customer?.billing?.company ||
+          inv.customerInfo?.company ||
+          `${inv.customerInfo?.firstName || ""} ${inv.customerInfo?.lastName || ""}`.trim();
+
+    const cleanedItems = (inv.items || []).map((item) => ({
+      name: item.name || "",
+      sku: item.sku || "",
+      description: item.description || "",
+      price: item.price ?? 0,
+      quantity: item.quantity ?? 0,
+      discount: item.discount ?? 0,
+      discountType: item.discountType || "fixed",
+      isTaxable: Boolean(item.isTaxable),
+      taxMethod: item.taxMethod || "exclusive",
+      itemTax: item.itemTax ?? 0,
+      total: item.total ?? 0,
+    }));
+
+    return {
+      rows: cleanedItems.map((item) => ({
+        invoiceNumber: inv.invoiceNumber,
+        customer: customerName,
+        ...item,
+      })),
+      columns: [
+        { key: "invoiceNumber", label: "Invoice #" },
+        { key: "customer", label: "Customer" },
+        { key: "name", label: "Item" },
+        { key: "sku", label: "SKU" },
+        { key: "price", label: "Price" },
+        { key: "quantity", label: "Quantity" },
+        { key: "discount", label: "Discount" },
+        { key: "itemTax", label: "Tax" },
+        { key: "total", label: "Total" },
+      ],
+      structuredData: {
+        invoiceNumber: inv.invoiceNumber,
+        taxInvoiceNumber: inv.taxInvoiceNumber || "",
+        invoiceType: inv.invoiceType,
+        status: inv.status,
+        invoiceDate: inv.invoiceDate || inv.createdAt,
+        dueDate: inv.dueDate || null,
+        reference: inv.reference || "",
+        placeOfSupply: inv.placeOfSupply || "",
+        customer: inv.customer
+          ? {
+              firstName: inv.customer.firstName || "",
+              lastName: inv.customer.lastName || "",
+              email: inv.customer.email || "",
+              taxNumber: inv.customer.taxNumber || "",
+              billing: inv.customer.billing || {},
+            }
+          : null,
+        customerInfo: inv.customerInfo || null,
+        items: cleanedItems,
+        subtotal: inv.subtotal ?? 0,
+        tax: inv.tax ?? 0,
+        taxRate: inv.taxRate ?? 0,
+        discount: inv.discount ?? 0,
+        deliveryCharge: inv.deliveryCharge ?? 0,
+        total: inv.total ?? 0,
+        amountPaid: inv.amountPaid ?? 0,
+        balanceDue,
+        currency: inv.currency || null,
+        exchangeRate: inv.exchangeRate || null,
+        notes: inv.notes || "",
+        terms: inv.terms || "",
+      },
+    };
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <Link
           to="/invoices"
           className="flex items-center text-slate-400 hover:text-white transition-colors"
         >
           <ArrowLeft className="mr-2 h-5 w-5" /> Back to Invoices
         </Link>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-3 items-center">
           {balanceDue > 0 &&
             !invoice.isWrittenOff &&
             user?.role === "admin" && (
@@ -274,6 +350,13 @@ const InvoiceView = () => {
             <Download className="mr-2 h-5 w-5" />
             {downloadingPDF ? "Generating..." : "Invoice"}
           </button>
+          <ExportMenu
+            filename={invoice.invoiceNumber || "invoice"}
+            data={invoice}
+            prepareExport={prepareInvoiceExport}
+            rootName="invoice"
+            itemName="item"
+          />
           <button
             onClick={() => setIsDeliveryModalOpen(true)}
             className="flex items-center px-4 py-2 bg-slate-600 text-white rounded hover:bg-slate-700 transition-colors"

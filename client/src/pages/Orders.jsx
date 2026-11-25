@@ -10,6 +10,7 @@ import { formatDate } from "../utils/date";
 import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
 import Pagination from "../components/Pagination";
+import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
 
 const Orders = () => {
@@ -131,6 +132,69 @@ const Orders = () => {
     }
   };
 
+  const fetchOrdersForExport = async () => {
+    const params = {
+      ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+      ...(filters.status !== "all" ? { status: filters.status } : {}),
+      ...(filters.startDate ? { startDate: filters.startDate } : {}),
+      ...(filters.endDate ? { endDate: filters.endDate } : {}),
+    };
+    const res = await apiClient.get(ENDPOINTS.ORDERS, { params });
+    return Array.isArray(res.data) ? res.data : res.data?.data || [];
+  };
+
+  const orderExportColumns = [
+    { key: "orderNumber", label: "Order #" },
+    {
+      key: "source",
+      label: "Source",
+      accessor: (o) => (o.wooOrderId ? "WooCommerce" : "Manual"),
+    },
+    {
+      key: "customer",
+      label: "Customer",
+      accessor: (o) =>
+        o.customerInfo?.firstName ||
+        o.customerInfo?.lastName ||
+        o.customer?.firstName ||
+        o.customer?.lastName
+          ? `${o.customerInfo?.firstName || o.customer?.firstName || ""} ${
+              o.customerInfo?.lastName || o.customer?.lastName || ""
+            }`.trim()
+          : o.customer?.billing?.company || o.billingAddress?.company || "",
+    },
+    {
+      key: "email",
+      label: "Email",
+      accessor: (o) =>
+        o.customerInfo?.email ||
+        o.billingAddress?.email ||
+        o.customer?.email ||
+        "",
+    },
+    {
+      key: "phone",
+      label: "Phone",
+      accessor: (o) =>
+        o.customerInfo?.phone ||
+        o.billingAddress?.phone ||
+        o.customer?.billing?.phone ||
+        "",
+    },
+    {
+      key: "dateCreated",
+      label: "Date",
+      accessor: (o) => o.dateCreated || o.createdAt || "",
+    },
+    {
+      key: "itemsCount",
+      label: "Items Count",
+      accessor: (o) => o.items?.length || 0,
+    },
+    { key: "total", label: "Total" },
+    { key: "status", label: "Status" },
+  ];
+
   const getStatusColor = (status) => {
     switch (status) {
       case "completed":
@@ -166,7 +230,7 @@ const Orders = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-white">Orders</h1>
           {isFetching && !isLoading && (
@@ -175,10 +239,17 @@ const Orders = () => {
             </span>
           )}
         </div>
-        <div className="flex gap-3 items-center">
+        <div className="flex flex-wrap gap-3 items-center">
           <div className="text-sm text-slate-400">
-            {orders.length} total orders
+            {totalOrders} total orders
           </div>
+          <ExportMenu
+            filename="orders"
+            columns={orderExportColumns}
+            fetchData={fetchOrdersForExport}
+            rootName="orders"
+            itemName="order"
+          />
           {!(settings?.modules?.woocommerce === false) && (
             <button
               onClick={handleSync}
