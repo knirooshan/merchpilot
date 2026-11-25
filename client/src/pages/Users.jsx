@@ -9,6 +9,7 @@ import { formatDate } from "../utils/date";
 import { useNavigate } from "react-router-dom";
 import Pagination from "../components/Pagination";
 import SearchBar from "../components/SearchBar";
+import ExportMenu from "../components/ExportMenu";
 import useDebounce from "../utils/useDebounce";
 
 const Users = () => {
@@ -155,6 +156,22 @@ const Users = () => {
     deleteMutation.mutate(id);
   };
 
+  const fetchUsersForExport = async () => {
+    const params = {
+      ...(debouncedSearchTerm ? { search: debouncedSearchTerm } : {}),
+      ...(roleFilter !== "all" ? { role: roleFilter } : {}),
+    };
+    const { data } = await apiClient.get(ENDPOINTS.USERS, { params });
+    return Array.isArray(data) ? data : data?.data || [];
+  };
+
+  const userExportColumns = [
+    { key: "name", label: "Name" },
+    { key: "email", label: "Email" },
+    { key: "role", label: "Role" },
+    { key: "createdAt", label: "Created At" },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -164,17 +181,26 @@ const Users = () => {
             Manage system access, team members, and role permissions
           </p>
         </div>
-        <button
-          onClick={() => {
-            setEditingUser(null);
-            setFormData({ name: "", email: "", password: "", role: "editor" });
-            setShowModal(true);
-          }}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors self-start sm:self-auto"
-        >
-          <Plus className="mr-2" size={20} />
-          Add User
-        </button>
+        <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+          <ExportMenu
+            filename="users"
+            columns={userExportColumns}
+            fetchData={fetchUsersForExport}
+            rootName="users"
+            itemName="user"
+          />
+          <button
+            onClick={() => {
+              setEditingUser(null);
+              setFormData({ name: "", email: "", password: "", role: "editor" });
+              setShowModal(true);
+            }}
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="mr-2" size={20} />
+            Add User
+          </button>
+        </div>
       </div>
 
       {error && (

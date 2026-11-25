@@ -6,10 +6,14 @@ const { getTenantModels } = require("../models/tenantModels");
 const getLogs = async (req, res) => {
   try {
     const { ActivityLog, User } = getTenantModels(req.dbConnection);
-    const { search, page, limit, pageNumber, pageSize } = req.query;
+    const { search, page, limit, pageNumber, pageSize, paginate } = req.query;
 
-    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
-    const perPage = Math.max(1, Number(limit || pageSize) || 15);
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined ||
+      paginate === "true";
 
     const filter = {};
 
@@ -28,6 +32,16 @@ const getLogs = async (req, res) => {
         { ip: searchRegex },
       ];
     }
+
+    if (!isPaginated) {
+      const logs = await ActivityLog.find(filter)
+        .populate("user", "name email")
+        .sort({ createdAt: -1 });
+      return res.json(logs);
+    }
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
 
     const count = await ActivityLog.countDocuments(filter);
     const logs = await ActivityLog.find(filter)

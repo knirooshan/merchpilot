@@ -16,6 +16,7 @@ import { formatDate } from "../utils/date";
 import toast from "react-hot-toast";
 import { useLocation } from "react-router-dom";
 import Pagination from "../components/Pagination";
+import ExportMenu from "../components/ExportMenu";
 import useDebounce from "../utils/useDebounce";
 
 const DeliveryTracking = () => {
@@ -193,15 +194,67 @@ const DeliveryTracking = () => {
     return diffDays > 2; // Treat as late if > 2 days old and still in queue
   };
 
+  const fetchDeliveriesForExport = async () => {
+    const params = {
+      ...(debouncedQueueSearch ? { search: debouncedQueueSearch } : {}),
+      ...(queueStatusFilter !== "all" ? { status: queueStatusFilter } : {}),
+    };
+    const res = await apiClient.get(ENDPOINTS.DELIVERY_QUEUE, { params });
+    return Array.isArray(res.data) ? res.data : res.data?.data || [];
+  };
+
+  const deliveryExportColumns = [
+    {
+      key: "invoiceNumber",
+      label: "Invoice #",
+      accessor: (d) => d.invoice?.invoiceNumber || "",
+    },
+    {
+      key: "customer",
+      label: "Customer",
+      accessor: (d) =>
+        d.invoice?.customer
+          ? `${d.invoice.customer.firstName || ""} ${d.invoice.customer.lastName || ""}`.trim()
+          : "Walk-in",
+    },
+    {
+      key: "customerEmail",
+      label: "Customer Email",
+      accessor: (d) => d.invoice?.customer?.email || "",
+    },
+    {
+      key: "invoiceDate",
+      label: "Invoice Date",
+      accessor: (d) => d.invoice?.invoiceDate || "",
+    },
+    { key: "status", label: "Status" },
+    {
+      key: "trackingNumbers",
+      label: "Tracking Numbers",
+      accessor: (d) =>
+        Array.isArray(d.trackingNumbers) ? d.trackingNumbers.join(", ") : "",
+    },
+    { key: "updatedAt", label: "Updated At" },
+  ];
+
   return (
     <div className="container mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Delivery Tracking</h1>
           <p className="text-sm text-slate-400 mt-1">
             Manage invoice deliveries and dispatch status
           </p>
         </div>
+        {activeTab === "queue" && (
+          <ExportMenu
+            filename="delivery_queue"
+            columns={deliveryExportColumns}
+            fetchData={fetchDeliveriesForExport}
+            rootName="deliveries"
+            itemName="delivery"
+          />
+        )}
       </div>
 
       <div className="mb-6 border-b border-slate-800">

@@ -82,10 +82,15 @@ const getPayments = async (req, res) => {
       limit,
       pageNumber,
       pageSize,
+      paginate,
     } = req.query;
 
-    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
-    const perPage = Math.max(1, Number(limit || pageSize) || 15);
+    const isPaginated =
+      page !== undefined ||
+      pageNumber !== undefined ||
+      limit !== undefined ||
+      pageSize !== undefined ||
+      paginate === "true";
 
     // Build filter object
     const filter = { status: { $ne: "deleted" } };
@@ -142,6 +147,18 @@ const getPayments = async (req, res) => {
       if (startDate) filter.date.$gte = parseStartOfDay(startDate, timezone);
       if (endDate) filter.date.$lte = parseEndOfDay(endDate, timezone);
     }
+
+    if (!isPaginated) {
+      const payments = await Payment.find(filter)
+        .populate("customer", "firstName lastName email billing")
+        .populate("invoice", "invoiceNumber")
+        .populate("order", "orderNumber")
+        .sort({ date: -1 });
+      return res.json(payments);
+    }
+
+    const currentPage = Math.max(1, Number(page || pageNumber) || 1);
+    const perPage = Math.max(1, Number(limit || pageSize) || 15);
 
     const count = await Payment.countDocuments(filter);
     const payments = await Payment.find(filter)

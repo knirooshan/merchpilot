@@ -22,6 +22,7 @@ import FilterBar from "../components/FilterBar";
 import DeliveryUpdateModal from "../components/DeliveryUpdateModal";
 import ErrorBoundary from "../ErrorBoundary";
 import Pagination from "../components/Pagination";
+import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
 
 const STATUS_STYLES = {
@@ -161,6 +162,62 @@ const Invoices = () => {
     setIsPaymentModalOpen(true);
   };
 
+  const fetchInvoicesForExport = async () => {
+    const params = {
+      ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+      ...(filters.status !== "all" ? { status: filters.status } : {}),
+      ...(filters.startDate ? { startDate: filters.startDate } : {}),
+      ...(filters.endDate ? { endDate: filters.endDate } : {}),
+    };
+    const res = await apiClient.get(ENDPOINTS.INVOICES, { params });
+    return Array.isArray(res.data) ? res.data : res.data?.data || [];
+  };
+
+  const invoiceExportColumns = [
+    { key: "invoiceNumber", label: "Invoice #" },
+    { key: "taxInvoiceNumber", label: "Tax Invoice #" },
+    { key: "invoiceType", label: "Type" },
+    {
+      key: "customer",
+      label: "Customer",
+      accessor: (inv) =>
+        inv.customer?.firstName || inv.customer?.lastName
+          ? `${inv.customer.firstName || ""} ${inv.customer.lastName || ""}`.trim()
+          : inv.customer?.billing?.company ||
+            inv.customerInfo?.company ||
+            (inv.customerInfo?.firstName || inv.customerInfo?.lastName
+              ? `${inv.customerInfo.firstName || ""} ${inv.customerInfo.lastName || ""}`.trim()
+              : ""),
+    },
+    {
+      key: "customerEmail",
+      label: "Customer Email",
+      accessor: (inv) => inv.customer?.email || inv.customerInfo?.email || "",
+    },
+    {
+      key: "invoiceDate",
+      label: "Invoice Date",
+      accessor: (inv) => inv.invoiceDate || inv.createdAt || "",
+    },
+    { key: "dueDate", label: "Due Date" },
+    { key: "subtotal", label: "Subtotal" },
+    { key: "tax", label: "Tax" },
+    { key: "discount", label: "Discount" },
+    { key: "total", label: "Total" },
+    { key: "amountPaid", label: "Amount Paid" },
+    {
+      key: "balanceDue",
+      label: "Balance Due",
+      accessor: (inv) => inv.balanceDue ?? (inv.total || 0) - (inv.amountPaid || 0),
+    },
+    {
+      key: "currency",
+      label: "Currency",
+      accessor: (inv) => inv.currency?.code || settings?.currency?.code || "",
+    },
+    { key: "status", label: "Status" },
+  ];
+
   if (isLoading) return <div className="text-white">Loading invoices...</div>;
 
   if (error && !invoicesData) {
@@ -176,7 +233,7 @@ const Invoices = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-white">Invoices</h1>
           {isFetching && !isLoading && (
@@ -185,13 +242,22 @@ const Invoices = () => {
             </span>
           )}
         </div>
-        <Link
-          to="/invoices/create"
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="mr-2 h-5 w-5" />
-          Create Invoice
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <ExportMenu
+            filename="invoices"
+            columns={invoiceExportColumns}
+            fetchData={fetchInvoicesForExport}
+            rootName="invoices"
+            itemName="invoice"
+          />
+          <Link
+            to="/invoices/create"
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            Create Invoice
+          </Link>
+        </div>
       </div>
 
       {/* Search and Filters */}

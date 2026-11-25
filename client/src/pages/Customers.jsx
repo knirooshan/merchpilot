@@ -9,6 +9,7 @@ import CustomerForm from "../components/CustomerForm";
 import CustomerDetailModal from "../components/CustomerDetailModal";
 import SearchBar from "../components/SearchBar";
 import Pagination from "../components/Pagination";
+import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
 
 const Customers = () => {
@@ -118,6 +119,47 @@ const Customers = () => {
     }
   };
 
+  const fetchCustomersForExport = async () => {
+    const params = {
+      ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+    };
+    const res = await apiClient.get(ENDPOINTS.CUSTOMERS, { params });
+    return Array.isArray(res.data) ? res.data : res.data?.data || [];
+  };
+
+  const customerExportColumns = [
+    { key: "firstName", label: "First Name" },
+    { key: "lastName", label: "Last Name" },
+    { key: "email", label: "Email" },
+    {
+      key: "phone",
+      label: "Phone",
+      accessor: (c) => c.billing?.phone || "",
+    },
+    {
+      key: "company",
+      label: "Company",
+      accessor: (c) => c.billing?.company || c.shipping?.company || "",
+    },
+    {
+      key: "address",
+      label: "Address",
+      accessor: (c) =>
+        [c.billing?.address_1, c.billing?.address_2].filter(Boolean).join(", "),
+    },
+    {
+      key: "city",
+      label: "City",
+      accessor: (c) => c.billing?.city || c.shipping?.city || "",
+    },
+    {
+      key: "country",
+      label: "Country",
+      accessor: (c) => c.billing?.country || c.shipping?.country || "",
+    },
+    { key: "createdAt", label: "Created At" },
+  ];
+
   if (isLoading) return <div className="text-white">Loading customers...</div>;
 
   if (error && !customersData) {
@@ -133,7 +175,7 @@ const Customers = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-white">Customers</h1>
           {isFetching && !isLoading && (
@@ -142,13 +184,22 @@ const Customers = () => {
             </span>
           )}
         </div>
-        <button
-          onClick={() => openModal()}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="mr-2 h-5 w-5" />
-          Add Customer
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <ExportMenu
+            filename="customers"
+            columns={customerExportColumns}
+            fetchData={fetchCustomersForExport}
+            rootName="customers"
+            itemName="customer"
+          />
+          <button
+            onClick={() => openModal()}
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="mr-2 h-5 w-5" />
+            Add Customer
+          </button>
+        </div>
       </div>
 
       {/* Search */}

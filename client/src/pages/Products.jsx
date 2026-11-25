@@ -16,6 +16,7 @@ import toast from "react-hot-toast";
 import { formatCurrency } from "../utils/currency";
 import ProductForm from "../components/ProductForm";
 import Pagination from "../components/Pagination";
+import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
 
 const Products = () => {
@@ -205,6 +206,39 @@ const Products = () => {
     setShowForm(true);
   };
 
+  const fetchProductsForExport = async () => {
+    const params = {
+      sortBy,
+      ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+    };
+    const res = await apiClient.get(ENDPOINTS.PRODUCTS, { params });
+    return Array.isArray(res.data) ? res.data : res.data?.data || [];
+  };
+
+  const productExportColumns = [
+    { key: "name", label: "Name" },
+    { key: "sku", label: "SKU" },
+    { key: "handle", label: "Handle" },
+    { key: "price", label: "Price" },
+    { key: "regularPrice", label: "Regular Price" },
+    { key: "salePrice", label: "Sale Price" },
+    { key: "costPrice", label: "Cost Price" },
+    { key: "stockQuantity", label: "Stock Quantity" },
+    {
+      key: "categories",
+      label: "Categories",
+      accessor: (p) =>
+        Array.isArray(p.categories)
+          ? p.categories
+              .map((c) => (typeof c === "string" ? c : c?.name))
+              .filter(Boolean)
+              .join(", ")
+          : "",
+    },
+    { key: "status", label: "Status" },
+    { key: "createdAt", label: "Created At" },
+  ];
+
   if (isLoading) return <div className="text-white">Loading products...</div>;
 
   if (error && !productsData) {
@@ -229,7 +263,14 @@ const Products = () => {
             </span>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <ExportMenu
+            filename="products"
+            columns={productExportColumns}
+            fetchData={fetchProductsForExport}
+            rootName="products"
+            itemName="product"
+          />
           <button
             onClick={handleAdd}
             className="flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"

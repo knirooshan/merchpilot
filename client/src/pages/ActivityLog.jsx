@@ -8,6 +8,7 @@ import { Link } from "react-router-dom";
 import ActivityLogModal from "../components/ActivityLogModal";
 import SearchBar from "../components/SearchBar";
 import Pagination from "../components/Pagination";
+import ExportMenu from "../components/ExportMenu";
 import { useDebounce } from "../utils/useDebounce";
 import { formatDate, formatTime } from "../utils/date";
 
@@ -50,9 +51,35 @@ const ActivityLog = () => {
   const totalLogs = queryResult?.total || (queryResult?.data ? queryResult.data.length : 0);
   const pages = queryResult?.pages || 1;
 
+  const fetchActivityLogsForExport = async () => {
+    const params = {
+      ...(debouncedSearch?.trim() ? { search: debouncedSearch.trim() } : {}),
+    };
+    const res = await apiClient.get(ENDPOINTS.ACTIVITY_LOGS, { params });
+    return Array.isArray(res.data) ? res.data : res.data?.data || [];
+  };
+
+  const activityLogExportColumns = [
+    { key: "timestamp", label: "Timestamp", accessor: (log) => log.createdAt || "" },
+    {
+      key: "user",
+      label: "User",
+      accessor: (log) => log.user?.name || "Guest/System",
+    },
+    {
+      key: "userEmail",
+      label: "User Email",
+      accessor: (log) => log.user?.email || "",
+    },
+    { key: "action", label: "Action" },
+    { key: "collectionName", label: "Collection" },
+    { key: "documentId", label: "Document ID" },
+    { key: "ip", label: "IP Address" },
+  ];
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-4">
           <Link
             to="/settings"
@@ -69,13 +96,22 @@ const ActivityLog = () => {
             )}
           </div>
         </div>
-        <button
-          onClick={() => refetch()}
-          disabled={isFetching}
-          className="flex items-center px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700 transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} /> Refresh
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <ExportMenu
+            filename="activity_logs"
+            columns={activityLogExportColumns}
+            fetchData={fetchActivityLogsForExport}
+            rootName="activityLogs"
+            itemName="activityLog"
+          />
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="flex items-center px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} /> Refresh
+          </button>
+        </div>
       </div>
 
       <SearchBar
