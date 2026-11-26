@@ -16,524 +16,731 @@ import { formatDate } from "../utils/date";
 import { getTaxDisplay } from "../utils/taxDisplay";
 import { renderHtmlToPdf } from "../utils/pdfUtils.jsx";
 
+// ---------------------------------------------------------------------------
+// Number to words (LKR-style: up to billions)
+// ---------------------------------------------------------------------------
+const ones = [
+  "",
+  "One",
+  "Two",
+  "Three",
+  "Four",
+  "Five",
+  "Six",
+  "Seven",
+  "Eight",
+  "Nine",
+  "Ten",
+  "Eleven",
+  "Twelve",
+  "Thirteen",
+  "Fourteen",
+  "Fifteen",
+  "Sixteen",
+  "Seventeen",
+  "Eighteen",
+  "Nineteen",
+];
+const tens = [
+  "",
+  "",
+  "Twenty",
+  "Thirty",
+  "Forty",
+  "Fifty",
+  "Sixty",
+  "Seventy",
+  "Eighty",
+  "Ninety",
+];
+
+function numberToWords(n) {
+  if (n === 0) return "Zero";
+  if (n < 0) return "Minus " + numberToWords(-n);
+  if (n < 20) return ones[n];
+  if (n < 100)
+    return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+  if (n < 1000)
+    return (
+      ones[Math.floor(n / 100)] +
+      " Hundred" +
+      (n % 100 ? " " + numberToWords(n % 100) : "")
+    );
+  if (n < 100000)
+    return (
+      numberToWords(Math.floor(n / 1000)) +
+      " Thousand" +
+      (n % 1000 ? " " + numberToWords(n % 1000) : "")
+    );
+  if (n < 10000000)
+    return (
+      numberToWords(Math.floor(n / 100000)) +
+      " Lakh" +
+      (n % 100000 ? " " + numberToWords(n % 100000) : "")
+    );
+  return (
+    numberToWords(Math.floor(n / 10000000)) +
+    " Crore" +
+    (n % 10000000 ? " " + numberToWords(n % 10000000) : "")
+  );
+}
+
+function amountInWords(amount, settings) {
+  const total = Math.abs(parseFloat(amount) || 0);
+  const rupees = Math.floor(total);
+  const cents = Math.round((total - rupees) * 100);
+  const currencyName =
+    settings?.currency?.code === "LKR"
+      ? "Rupees"
+      : settings?.currency?.code === "USD"
+        ? "Dollars"
+        : settings?.currency?.code === "GBP"
+          ? "Pounds"
+          : settings?.currency?.code || "Units";
+  const centName = "Cents";
+
+  let words = numberToWords(rupees) + " " + currencyName;
+  if (cents > 0) words += " and " + numberToWords(cents) + " " + centName;
+  return words + " Only";
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
   page: {
     flexDirection: "column",
     backgroundColor: "#FFFFFF",
-    padding: 40,
+    padding: 36,
     fontFamily: "Helvetica",
     color: "#111827",
+    fontSize: 9,
   },
-  header: {
+  // ── Header ──────────────────────────────────────────────
+  headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 30,
-    borderBottomWidth: 2,
-    borderBottomColor: "#2563EB", // Blue accent
-    paddingBottom: 20,
+    alignItems: "flex-start",
+    marginBottom: 8,
   },
-  logo: {
-    width: 120,
-    height: 50,
-    objectFit: "contain",
-    marginBottom: 10,
+  titleBlock: {
+    flexDirection: "column",
   },
-  title: {
-    fontSize: 32,
+  titleText: {
+    fontSize: 18,
     fontWeight: "bold",
-    color: "#2563EB", // Blue accent
-    letterSpacing: 1,
+    color: "#1E3A8A",
+    letterSpacing: 2,
   },
-  subTitle: {
-    fontSize: 12,
+  taxInvNoLabel: {
+    fontSize: 9,
     color: "#6B7280",
     marginTop: 4,
   },
-  companyInfo: {
-    fontSize: 9,
-    color: "#4B5563",
-    marginTop: 2,
-    textAlign: "right",
-  },
-  infoGroup: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 30,
-  },
-  infoSection: {
-    width: "45%",
-  },
-  sectionTitle: {
-    fontSize: 10,
+  taxInvNoValue: {
+    fontSize: 11,
     fontWeight: "bold",
-    color: "#9CA3AF",
-    textTransform: "uppercase",
-    marginBottom: 8,
-    letterSpacing: 0.5,
+    color: "#1E3A8A",
+    marginTop: 2,
   },
-  text: {
-    fontSize: 10,
-    color: "#1F2937",
-    marginBottom: 3,
-    lineHeight: 1.4,
+  logo: {
+    width: 100,
+    height: 44,
+    objectFit: "contain",
+    marginTop: 4,
   },
-  table: {
-    display: "table",
-    width: "auto",
-    marginTop: 10,
+  // ── Blue header divider ──────────────────────────────────
+  headerDivider: {
+    height: 2,
+    backgroundColor: "#1E3A8A",
     marginBottom: 20,
   },
-  tableRow: {
+  // ── Two-column info grid ─────────────────────────────────
+  infoGrid: {
     flexDirection: "row",
-    borderBottomWidth: 1,
+    borderWidth: 0.5,
+    borderColor: "#E5E7EB",
+    borderRadius: 2,
+    marginBottom: 16,
+  },
+  infoCol: {
+    width: "50%",
+    padding: 10,
+    borderRightWidth: 0.5,
+    borderRightColor: "#E5E7EB",
+  },
+  infoColRight: {
+    width: "50%",
+    padding: 10,
+  },
+  sectionLabel: {
+    fontSize: 8,
+    fontWeight: "bold",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    borderBottomWidth: 0.5,
     borderBottomColor: "#E5E7EB",
-    paddingVertical: 8,
-    alignItems: "flex-start",
+    paddingBottom: 4,
+  },
+  infoText: {
+    fontSize: 9,
+    color: "#1F2937",
+    marginBottom: 0,
+    lineHeight: 1.4,
+  },
+  infoTextBold: {
+    fontSize: 9,
+    fontWeight: "bold",
+    color: "#111827",
+    marginBottom: 0,
+  },
+  tinText: {
+    fontSize: 9,
+    fontWeight: "bold",
+    color: "#1F2937",
+    marginBottom: 0,
+  },
+  // ── Details bar (date issued, valid until, etc.) ─────────
+  detailsBar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 3,
+    borderWidth: 0.5,
+    borderColor: "#E5E7EB",
+    padding: 8,
+    marginBottom: 10,
+    gap: 0,
+  },
+  detailCell: {
+    width: "25%",
+    marginBottom: 4,
+  },
+  detailLabel: {
+    fontSize: 7,
+    color: "#6B7280",
+    marginBottom: 1,
+    textTransform: "uppercase",
+  },
+  detailValue: {
+    fontSize: 9,
+    color: "#111827",
+    fontWeight: "bold",
+  },
+  // ── Table ────────────────────────────────────────────────
+  table: {
+    marginTop: 4,
+    marginBottom: 10,
   },
   tableHeader: {
     flexDirection: "row",
-    backgroundColor: "#F3F4F6",
+    backgroundColor: "#1E3A8A",
     paddingVertical: 8,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    paddingHorizontal: 6,
     alignItems: "center",
   },
-  colItem: {
-    width: "35%",
-    paddingLeft: 4,
+  tableRow: {
     flexDirection: "row",
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#E5E7EB",
+    paddingVertical: 8,
+    paddingHorizontal: 6,
     alignItems: "flex-start",
   },
-  colImage: { width: "10%", paddingLeft: 4 },
-  colPrice: { width: "20%", textAlign: "right" },
-  colQty: { width: "15%", textAlign: "right" },
-  colTotal: { width: "20%", textAlign: "right", paddingRight: 4 },
+  tableRowAlt: {
+    backgroundColor: "#F9FAFB",
+  },
+  colRef: { width: "6%", paddingRight: 2 },
+  colImage: { width: "10%", paddingRight: 4 },
+  colDesc: { width: "36%", paddingRight: 4 },
+  colQty: { width: "10%", textAlign: "right" },
+  colUnit: { width: "18%", textAlign: "right" },
+  colTotal: { width: "20%", textAlign: "right" },
   productImage: {
     width: 30,
     height: 30,
     objectFit: "contain",
-    marginRight: 8,
   },
   imagePlaceholder: {
     width: 30,
     height: 30,
     backgroundColor: "#F3F4F6",
     borderRadius: 2,
-    marginRight: 8,
   },
-
-  tableCellHeader: {
-    fontSize: 9,
+  thText: {
+    fontSize: 7,
     fontWeight: "bold",
-    color: "#4B5563",
+    color: "#FFFFFF",
     textTransform: "uppercase",
   },
-  tableCell: {
-    fontSize: 10,
+  tdText: {
+    fontSize: 9,
     color: "#1F2937",
   },
-  tableCellSub: {
-    fontSize: 8,
+  tdSub: {
+    fontSize: 7,
     color: "#6B7280",
-    marginTop: 2,
+    marginTop: 1,
   },
-  totals: {
-    marginTop: 10,
-    alignItems: "flex-end",
-    borderTopWidth: 1,
-    borderTopColor: "#E5E7EB",
-    paddingTop: 10,
+  // ── Totals ────────────────────────────────────────────────
+  totalsSection: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginBottom: 8,
+  },
+  totalsTable: {
+    width: "45%",
+    borderWidth: 0.5,
+    borderColor: "#E5E7EB",
+    borderRadius: 3,
   },
   totalRow: {
     flexDirection: "row",
-    marginBottom: 4,
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#E5E7EB",
   },
-  totalLabel: {
-    width: 100,
-    fontSize: 10,
+  totalLabelText: {
+    fontSize: 9,
     color: "#6B7280",
-    textAlign: "right",
-    marginRight: 10,
   },
-  totalValue: {
-    width: 150,
-    fontSize: 10,
+  totalValueText: {
+    fontSize: 9,
     color: "#111827",
     textAlign: "right",
-    fontWeight: "medium",
   },
-  grandTotal: {
+  grandTotalRow: {
     flexDirection: "row",
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 2,
-    borderTopColor: "#2563EB",
+    justifyContent: "space-between",
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    backgroundColor: "#1E3A8A",
+    borderRadius: 2,
   },
   grandTotalLabel: {
-    width: 100,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "bold",
-    color: "#111827",
-    textAlign: "right",
-    marginRight: 10,
+    color: "#FFFFFF",
   },
   grandTotalValue: {
-    width: 150,
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: "bold",
-    color: "#2563EB",
+    color: "#FFFFFF",
     textAlign: "right",
   },
-  notes: {
-    marginTop: 30,
-    padding: 15,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 4,
+  // ── Amount in words ───────────────────────────────────────
+  amountWords: {
+    marginBottom: 8,
+    padding: 6,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 3,
   },
+  amountWordsLabel: {
+    fontSize: 7,
+    color: "#6B7280",
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
+  amountWordsText: {
+    fontSize: 9,
+    fontWeight: "bold",
+    color: "#1E3A8A",
+  },
+  // ── Notes ────────────────────────────────────────────────
+  notes: {
+    marginBottom: 10,
+    padding: 10,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 3,
+    borderWidth: 0.5,
+    borderColor: "#E5E7EB",
+  },
+  noteTitle: {
+    fontSize: 8,
+    fontWeight: "bold",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    marginBottom: 3,
+  },
+  // ── Footer ────────────────────────────────────────────────
   footer: {
     position: "absolute",
-    bottom: 30,
-    left: 40,
-    right: 40,
+    bottom: 25,
+    left: 36,
+    right: 36,
     textAlign: "center",
-    fontSize: 8,
+    fontSize: 7,
     color: "#9CA3AF",
-    borderTopWidth: 1,
+    borderTopWidth: 0.5,
     borderTopColor: "#E5E7EB",
-    paddingTop: 15,
+    paddingTop: 8,
+  },
+  footerNote: {
+    fontSize: 6.5,
+    color: "#9CA3AF",
+    marginTop: 4,
+    textAlign: "center",
   },
 });
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+const hasContent = (html) => {
+  if (!html) return false;
+  return (
+    html
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .trim() !== ""
+  );
+};
 
 const QuotationPDF = ({ quotation, settings }) => {
   const effectiveSettings = getDocumentCurrencySettings(quotation, settings);
   const taxInfo = getTaxDisplay(quotation, settings);
+  const supplierTIN = settings?.taxIdNo || "";
+  const purchaserTIN = quotation.customer?.taxNumber || "";
+
+  const customerName = [
+    quotation.customer?.salutation || "",
+    quotation.customer?.firstName || "",
+    quotation.customer?.lastName || "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const customerAddress = [
+    quotation.customer?.billing?.company || "",
+    quotation.customer?.billing?.address_1 || "",
+    quotation.customer?.billing?.address_2 || "",
+    [
+      quotation.customer?.billing?.city || "",
+      quotation.customer?.billing?.state || "",
+      quotation.customer?.billing?.postcode || "",
+    ]
+      .filter(Boolean)
+      .join(", "),
+    quotation.customer?.billing?.country || "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>QUOTATION</Text>
-            <Text style={styles.subTitle}>#{quotation.quotationNumber}</Text>
+        {/* ── Header ── */}
+        <View style={styles.headerRow}>
+          <View style={styles.titleBlock}>
+            <Text style={styles.titleText}>QUOTATION</Text>
+            <Text style={styles.taxInvNoLabel}>Quotation No.</Text>
+            <Text style={styles.taxInvNoValue}>
+              {quotation.quotationNumber}
+            </Text>
           </View>
-          <View style={{ alignItems: "flex-end", maxWidth: "50%" }}>
+          <View style={{ alignItems: "flex-end" }}>
             {settings?.logo && (
               <Image style={styles.logo} src={settings.logo} />
             )}
-            <Text
-              style={[styles.companyInfo, { fontWeight: "bold", fontSize: 11 }]}
-            >
-              {settings?.storeName}
-            </Text>
-            {settings?.address?.street && (
-              <Text style={styles.companyInfo}>{settings.address.street}</Text>
-            )}
-            {(settings?.address?.city || settings?.address?.zip) && (
-              <Text style={styles.companyInfo}>
-                {settings?.address?.city}
-                {settings?.address?.city && settings?.address?.zip && ", "}
-                {settings?.address?.zip}
-              </Text>
-            )}
-            {settings?.contact?.phone && (
-              <Text style={styles.companyInfo}>
-                Phone: {settings.contact.phone}
-              </Text>
-            )}
-            {settings?.contact?.email && (
-              <Text style={styles.companyInfo}>{settings.contact.email}</Text>
-            )}
-            {settings?.registrationNo && (
-              <Text style={styles.companyInfo}>
-                Reg No: {settings.registrationNo}
-              </Text>
-            )}
-            {settings?.taxIdNo && (
-              <Text style={styles.companyInfo}>Tax ID: {settings.taxIdNo}</Text>
-            )}
           </View>
         </View>
 
-        {/* Info Group */}
-        <View style={styles.infoGroup}>
-          <View style={styles.infoSection}>
-            <Text style={styles.sectionTitle}>Bill To</Text>
-            <Text style={[styles.text, { fontWeight: "bold" }]}>
-              {quotation.customer?.salutation
-                ? `${quotation.customer.salutation} `
-                : ""}
-              {quotation.customer?.firstName} {quotation.customer?.lastName}
-            </Text>
-            {quotation.customer?.billing?.company && (
-              <Text style={styles.text}>
-                {quotation.customer.billing.company}
+        <View style={styles.headerDivider} />
+
+        {/* ── Supplier & Customer Info ── */}
+        <View style={styles.infoGrid}>
+          {/* Supplier (left) */}
+          <View style={styles.infoCol}>
+            <Text style={styles.sectionLabel}>Supplier</Text>
+            <Text style={styles.infoTextBold}>{settings?.storeName || ""}</Text>
+            {supplierTIN ? (
+              <Text style={styles.tinText}>TIN/VAT: {supplierTIN}</Text>
+            ) : null}
+            {settings?.registrationNo ? (
+              <Text style={styles.infoText}>
+                Reg: {settings.registrationNo}
               </Text>
-            )}
-            {quotation.customer?.billing?.address_1 && (
-              <Text style={styles.text}>
-                {quotation.customer.billing.address_1}
+            ) : null}
+            {settings?.address?.street ? (
+              <Text style={styles.infoText}>{settings.address.street}</Text>
+            ) : null}
+            {settings?.address?.city || settings?.address?.zip ? (
+              <Text style={styles.infoText}>
+                {settings?.address?.city}
+                {settings?.address?.city && settings?.address?.zip ? ", " : ""}
+                {settings?.address?.zip}
               </Text>
-            )}
-            {quotation.customer?.billing?.address_2 && (
-              <Text style={styles.text}>
-                {quotation.customer.billing.address_2}
-              </Text>
-            )}
-            {(quotation.customer?.billing?.city ||
-              quotation.customer?.billing?.state ||
-              quotation.customer?.billing?.postcode) && (
-                <Text style={styles.text}>
-                  {[
-                    quotation.customer?.billing?.city,
-                    quotation.customer?.billing?.state,
-                    quotation.customer?.billing?.postcode,
-                  ]
-                    .filter(Boolean)
-                    .join(", ")}
-                </Text>
-              )}
-            {quotation.customer?.billing?.country && (
-              <Text style={styles.text}>
-                {quotation.customer.billing.country}
-              </Text>
-            )}
+            ) : null}
+            {settings?.contact?.phone ? (
+              <Text style={styles.infoText}>Tel: {settings.contact.phone}</Text>
+            ) : null}
+            {settings?.contact?.email ? (
+              <Text style={styles.infoText}>{settings.contact.email}</Text>
+            ) : null}
+          </View>
+
+          {/* Customer (right) */}
+          <View style={styles.infoColRight}>
+            <Text style={styles.sectionLabel}>Customer</Text>
+            <Text style={styles.infoTextBold}>{customerName}</Text>
+            {customerAddress ? (
+              <Text style={styles.infoText}>{customerAddress}</Text>
+            ) : null}
+            {purchaserTIN ? (
+              <Text style={styles.tinText}>TIN/VAT: {purchaserTIN}</Text>
+            ) : null}
             {quotation.customer?.billing?.phone && (
-              <Text style={styles.text}>
-                {quotation.customer.billing.phone}
+              <Text style={styles.infoText}>
+                Tel: {quotation.customer.billing.phone}
               </Text>
             )}
             {quotation.customer?.email && (
-              <Text style={styles.text}>{quotation.customer.email}</Text>
+              <Text style={styles.infoText}>{quotation.customer.email}</Text>
             )}
-            {quotation.customer?.taxNumber && (
-              <Text style={styles.text}>
-                {settings?.tax?.label && settings.tax.label !== "Tax"
-                  ? settings.tax.label
-                  : "TIN"}
-                : {quotation.customer.taxNumber}
-              </Text>
-            )}
-          </View>
-          <View style={styles.infoSection}>
-            <Text style={styles.sectionTitle}>Quotation Details</Text>
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                marginBottom: 4,
-              }}
-            >
-              <Text style={styles.text}>Date Issued:</Text>
-              <Text style={[styles.text, { fontWeight: "bold" }]}>
-                {formatDate(
-                  quotation.quotationDate || quotation.createdAt,
-                  settings,
-                )}
-              </Text>
-            </View>
-            {quotation.validUntil && (
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                }}
-              >
-                <Text style={styles.text}>Valid Until:</Text>
-                <Text style={[styles.text, { fontWeight: "bold" }]}>
-                  {formatDate(quotation.validUntil, settings)}
-                </Text>
-              </View>
-            )}
-            {isForeignCurrency(quotation, settings) && (
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  marginTop: 4,
-                }}
-              >
-                <Text style={styles.text}>Currency:</Text>
-                <Text
-                  style={[
-                    styles.text,
-                    { fontWeight: "bold", color: "#d97706" },
-                  ]}
-                >
-                  {quotation.currency.code}
-                </Text>
-              </View>
-            )}
-            {isForeignCurrency(quotation, settings) &&
-              quotation.exchangeRate?.rate > 0 && (
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <Text style={styles.text}>Exchange Rate:</Text>
-                  <Text style={styles.text}>
-                    1 {quotation.currency.code} = {quotation.exchangeRate.rate}{" "}
-                    {quotation.exchangeRate.baseCurrency ||
-                      settings?.currency?.code ||
-                      "LKR"}
-                  </Text>
-                </View>
-              )}
           </View>
         </View>
 
-        {/* Items Table */}
+        {/* ── Details Bar ── */}
+        <View style={styles.detailsBar}>
+          <View style={styles.detailCell}>
+            <Text style={styles.detailLabel}>Date Issued</Text>
+            <Text style={styles.detailValue}>
+              {formatDate(
+                quotation.quotationDate || quotation.createdAt,
+                settings,
+              )}
+            </Text>
+          </View>
+          {quotation.validUntil && (
+            <View style={styles.detailCell}>
+              <Text style={styles.detailLabel}>Valid Until</Text>
+              <Text style={styles.detailValue}>
+                {formatDate(quotation.validUntil, settings)}
+              </Text>
+            </View>
+          )}
+          {isForeignCurrency(quotation, settings) && (
+            <View style={styles.detailCell}>
+              <Text style={styles.detailLabel}>Currency</Text>
+              <Text style={[styles.detailValue, { color: "#d97706" }]}>
+                {quotation.currency.code}
+                {quotation.exchangeRate?.rate > 0
+                  ? `  (1 ${quotation.currency.code} = ${quotation.exchangeRate.rate} ${
+                      quotation.exchangeRate.baseCurrency ||
+                      settings?.currency?.code ||
+                      "LKR"
+                    })`
+                  : ""}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* ── Items Table ── */}
         <View style={styles.table}>
+          {/* Header */}
           <View style={styles.tableHeader}>
+            <View style={styles.colRef}>
+              <Text style={styles.thText}>Ref</Text>
+            </View>
             <View style={styles.colImage}>
-              <Text style={styles.tableCellHeader}>Image</Text>
+              <Text style={styles.thText}>Image</Text>
             </View>
-            <View style={styles.colItem}>
-              <Text style={styles.tableCellHeader}>Item Description</Text>
-            </View>
-            <View style={styles.colPrice}>
-              <Text style={styles.tableCellHeader}>Price</Text>
+            <View style={styles.colDesc}>
+              <Text style={styles.thText}>Description of Goods / Services</Text>
             </View>
             <View style={styles.colQty}>
-              <Text style={styles.tableCellHeader}>Qty</Text>
+              <Text style={[styles.thText, { textAlign: "right" }]}>Qty</Text>
+            </View>
+            <View style={styles.colUnit}>
+              <Text style={[styles.thText, { textAlign: "right" }]}>
+                Unit Price
+              </Text>
             </View>
             <View style={styles.colTotal}>
-              <Text style={styles.tableCellHeader}>Total</Text>
+              <Text style={[styles.thText, { textAlign: "right" }]}>
+                Amount
+              </Text>
             </View>
           </View>
-          {quotation.items.map((item, index) => {
-            return (
-              <View style={styles.tableRow} key={index}>
-                <View style={styles.colImage}>
-                  {item.image ? (
-                    <Image
-                      style={styles.productImage}
-                      src={item.image}
-                      cache={false}
-                    />
-                  ) : (
-                    <View style={styles.imagePlaceholder} />
-                  )}
-                </View>
-                <View style={styles.colItem}>
-                  <View>
-                    <Text style={styles.tableCell}>{item.name}</Text>
-                    {item.sku ? (
-                      <Text style={styles.tableCellSub}>SKU: {item.sku}</Text>
-                    ) : null}
-                    {(item.description || item.product?.shortDescription) && (
-                      <View style={{ marginTop: 2 }}>
-                        {renderHtmlToPdf(
-                          item.description || item.product.shortDescription,
-                          styles.tableCellSub,
-                        )}
-                      </View>
-                    )}
-                    {item.discount > 0 && (
-                      <Text style={[styles.tableCellSub, { color: "#EF4444" }]}>
-                        Discount: -
-                        {item.discountType === "percentage"
-                          ? `${item.discount}%`
-                          : formatCurrency(item.discount, effectiveSettings)}
-                      </Text>
+
+          {/* Rows */}
+          {(quotation.items || []).map((item, index) => (
+            <View
+              style={[
+                styles.tableRow,
+                index % 2 === 1 ? styles.tableRowAlt : {},
+              ]}
+              key={index}
+            >
+              <View style={styles.colRef}>
+                <Text style={styles.tdText}>{index + 1}</Text>
+              </View>
+              <View style={styles.colImage}>
+                {item.image ? (
+                  <Image
+                    style={styles.productImage}
+                    src={item.image}
+                    cache={false}
+                  />
+                ) : (
+                  <View style={styles.imagePlaceholder} />
+                )}
+              </View>
+              <View style={styles.colDesc}>
+                <Text style={styles.tdText}>{item.name}</Text>
+                {item.sku ? (
+                  <Text style={styles.tdSub}>SKU: {item.sku}</Text>
+                ) : null}
+                {(item.description || item.product?.shortDescription) && (
+                  <View style={{ marginTop: 2 }}>
+                    {renderHtmlToPdf(
+                      item.description || item.product.shortDescription,
+                      styles.tdSub,
                     )}
                   </View>
-                </View>
-                <View style={styles.colPrice}>
-                  <Text style={styles.tableCell}>
-                    {formatCurrency(item.price, effectiveSettings)}
+                )}
+                {item.discount > 0 && (
+                  <Text style={[styles.tdSub, { color: "#EF4444" }]}>
+                    Discount:{" "}
+                    {item.discountType === "percentage"
+                      ? `${item.discount}%`
+                      : formatCurrency(item.discount, effectiveSettings)}
                   </Text>
-                </View>
-                <View style={styles.colQty}>
-                  <Text style={styles.tableCell}>{item.quantity}</Text>
-                </View>
-                <View style={styles.colTotal}>
-                  <Text style={[styles.tableCell, { fontWeight: "bold" }]}>
-                    {formatCurrency(item.total, effectiveSettings)}
-                  </Text>
-                </View>
+                )}
               </View>
-            );
-          })}
+              <View style={styles.colQty}>
+                <Text style={[styles.tdText, { textAlign: "right" }]}>
+                  {item.quantity}
+                </Text>
+              </View>
+              <View style={styles.colUnit}>
+                <Text style={[styles.tdText, { textAlign: "right" }]}>
+                  {formatCurrency(item.price, effectiveSettings)}
+                </Text>
+              </View>
+              <View style={styles.colTotal}>
+                <Text
+                  style={[
+                    styles.tdText,
+                    { textAlign: "right", fontWeight: "bold" },
+                  ]}
+                >
+                  {formatCurrency(item.total, effectiveSettings)}
+                </Text>
+              </View>
+            </View>
+          ))}
         </View>
 
-        {/* Totals */}
-        <View style={styles.totals}>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Subtotal</Text>
-            <Text style={styles.totalValue}>
-              {formatCurrency(quotation.subtotal, effectiveSettings)}
-            </Text>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>{taxInfo.lineLabel}</Text>
-            <Text style={styles.totalValue}>
-              {formatCurrency(quotation.tax || 0, effectiveSettings)}
-            </Text>
-          </View>
-          {quotation.discount > 0 && (
+        {/* ── Totals ── */}
+        <View style={styles.totalsSection}>
+          <View style={styles.totalsTable}>
+            {/* Subtotal */}
             <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Discount</Text>
-              <Text style={[styles.totalValue, { color: "#EF4444" }]}>
-                -{formatCurrency(quotation.discount, effectiveSettings)}
+              <Text style={styles.totalLabelText}>Subtotal</Text>
+              <Text style={styles.totalValueText}>
+                {formatCurrency(quotation.subtotal, effectiveSettings)}
               </Text>
             </View>
-          )}
-          {quotation.deliveryCharge > 0 && (
+
+            {/* Tax line is always shown, even at 0% */}
             <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Delivery Charge</Text>
-              <Text style={styles.totalValue}>
-                {formatCurrency(quotation.deliveryCharge, effectiveSettings)}
+              <Text style={styles.totalLabelText}>{taxInfo.lineLabel}</Text>
+              <Text style={styles.totalValueText}>
+                {formatCurrency(quotation.tax || 0, effectiveSettings)}
               </Text>
             </View>
-          )}
-          <View style={styles.grandTotal}>
-            <Text style={styles.grandTotalLabel}>Total</Text>
-            <Text style={styles.grandTotalValue}>
-              {formatCurrency(quotation.total, effectiveSettings)}
-            </Text>
+
+            {/* Discount */}
+            {quotation.discount > 0 && (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabelText}>Discount</Text>
+                <Text style={[styles.totalValueText, { color: "#EF4444" }]}>
+                  -{formatCurrency(quotation.discount, effectiveSettings)}
+                </Text>
+              </View>
+            )}
+
+            {/* Delivery */}
+            {quotation.deliveryCharge > 0 && (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabelText}>Delivery Charge</Text>
+                <Text style={styles.totalValueText}>
+                  {formatCurrency(quotation.deliveryCharge, effectiveSettings)}
+                </Text>
+              </View>
+            )}
+
+            {/* Grand Total */}
+            <View style={styles.grandTotalRow}>
+              <Text style={styles.grandTotalLabel}>Total Amount</Text>
+              <Text style={styles.grandTotalValue}>
+                {formatCurrency(quotation.total, effectiveSettings)}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* Notes & Terms */}
-        {(quotation.notes || quotation.terms || quotation.deliveryNote) && (
+        {/* ── Total in Words ── */}
+        <View style={styles.amountWords}>
+          <Text style={styles.amountWordsLabel}>Total Amount in Words</Text>
+          <Text style={styles.amountWordsText}>
+            {amountInWords(quotation.total, effectiveSettings)}
+          </Text>
+        </View>
+
+        {/* ── Notes & Terms ── */}
+        {(hasContent(quotation.notes) ||
+          hasContent(quotation.terms) ||
+          hasContent(quotation.deliveryNote)) && (
           <View style={styles.notes}>
-            {quotation.notes && (
-              <View style={{ marginBottom: 10 }}>
-                <Text style={[styles.sectionTitle, { marginBottom: 4 }]}>
-                  Notes
-                </Text>
-                <View>{renderHtmlToPdf(quotation.notes)}</View>
+            {hasContent(quotation.notes) && (
+              <View style={{ marginBottom: 6 }}>
+                <Text style={styles.noteTitle}>Notes</Text>
+                <View>
+                  {renderHtmlToPdf(quotation.notes, {
+                    fontSize: 8,
+                    color: "#1F2937",
+                  })}
+                </View>
               </View>
             )}
-            {quotation.terms && (
-              <View style={{ marginBottom: 10 }}>
-                <Text style={[styles.sectionTitle, { marginBottom: 4 }]}>
-                  Terms & Conditions
-                </Text>
-                <View>{renderHtmlToPdf(quotation.terms)}</View>
+            {hasContent(quotation.terms) && (
+              <View style={{ marginBottom: 6 }}>
+                <Text style={styles.noteTitle}>Terms & Conditions</Text>
+                <View>
+                  {renderHtmlToPdf(quotation.terms, {
+                    fontSize: 8,
+                    color: "#1F2937",
+                  })}
+                </View>
               </View>
             )}
-            {quotation.deliveryNote && (
+            {hasContent(quotation.deliveryNote) && (
               <View>
-                <Text style={[styles.sectionTitle, { marginBottom: 4 }]}>
-                  Delivery Note
-                </Text>
-                <View>{renderHtmlToPdf(quotation.deliveryNote)}</View>
+                <Text style={styles.noteTitle}>Delivery Note</Text>
+                <View>
+                  {renderHtmlToPdf(quotation.deliveryNote, {
+                    fontSize: 8,
+                    color: "#1F2937",
+                  })}
+                </View>
               </View>
             )}
           </View>
         )}
 
-        {/* Footer */}
+        {/* ── Footer ── */}
         <View style={styles.footer}>
           <Text>Thank you for your business!</Text>
           {settings?.bank?.accountName && (
-            <View style={{ marginTop: 10, alignItems: "center" }}>
-              <Text style={{ fontWeight: "bold", marginBottom: 2 }}>
+            <View style={{ marginTop: 6, alignItems: "center" }}>
+              <Text style={{ fontWeight: "bold", marginBottom: 1 }}>
                 Bank Details:
               </Text>
               <Text>
@@ -549,6 +756,9 @@ const QuotationPDF = ({ quotation, settings }) => {
               )}
             </View>
           )}
+          <Text style={styles.footerNote}>
+            This is a computer-generated Quotation. No signature is required.
+          </Text>
         </View>
       </Page>
     </Document>
