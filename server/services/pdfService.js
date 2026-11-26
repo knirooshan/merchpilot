@@ -3,6 +3,55 @@ const axios = require("axios");
 const sharp = require("sharp");
 const { getTaxDisplay } = require("../utils/taxDisplay");
 
+const DEFAULT_DOCUMENT_COLORS = {
+  invoicePrimary: "#1E3A8A",
+  proformaPrimary: "#065F46",
+  quotationPrimary: "#1E3A8A",
+  amountWordsBg: "#EFF6FF",
+};
+
+const HEX_COLOR_RE = /^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/;
+
+const normalizeHexColor = (value, fallback) => {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  if (!HEX_COLOR_RE.test(trimmed)) return fallback;
+  if (trimmed.length === 4) {
+    return (
+      "#" +
+      trimmed
+        .slice(1)
+        .split("")
+        .map((c) => c + c)
+        .join("")
+        .toUpperCase()
+    );
+  }
+  return trimmed.toUpperCase();
+};
+
+const getDocumentColors = (settings) => {
+  const raw = settings?.documentColors || {};
+  return {
+    invoicePrimary: normalizeHexColor(
+      raw.invoicePrimary,
+      DEFAULT_DOCUMENT_COLORS.invoicePrimary,
+    ),
+    proformaPrimary: normalizeHexColor(
+      raw.proformaPrimary,
+      DEFAULT_DOCUMENT_COLORS.proformaPrimary,
+    ),
+    quotationPrimary: normalizeHexColor(
+      raw.quotationPrimary,
+      DEFAULT_DOCUMENT_COLORS.quotationPrimary,
+    ),
+    amountWordsBg: normalizeHexColor(
+      raw.amountWordsBg,
+      DEFAULT_DOCUMENT_COLORS.amountWordsBg,
+    ),
+  };
+};
+
 // ---------------------------------------------------------------------------
 // Number to Words (LKR-style)
 // ---------------------------------------------------------------------------
@@ -198,10 +247,10 @@ const drawLine = (doc, y, color = "#E5E7EB", lineWidth = 1) => {
 };
 
 // Helper to add table header (gazette-compliant columns)
-const addTableHeader = (doc, y, settings) => {
+const addTableHeader = (doc, y, settings, primaryColor = "#1E3A8A") => {
   doc
     .rect(50, y, 500, 26)
-    .fill("#1E3A8A")
+    .fill(primaryColor)
     .fillColor("#FFFFFF")
     .fontSize(8)
     .font("Helvetica-Bold")
@@ -283,6 +332,7 @@ const addTableRow = (doc, y, item, settings, isLast = false, rowIndex = 0) => {
 const generateInvoicePDF = async (invoice, settings) => {
   return new Promise(async (resolve, reject) => {
     try {
+      const colors = getDocumentColors(settings);
       const taxInfo = getTaxDisplay(invoice, settings);
       // Only VAT-registered suppliers may issue a "Tax Invoice"
       const docTypeName =
@@ -320,9 +370,12 @@ const generateInvoicePDF = async (invoice, settings) => {
       // ── HEADER ──────────────────────────────────────────────────────────
       // Invoice title (left)
       const isProforma = invoice.invoiceType === "proforma";
+      const headerColor = isProforma
+        ? colors.proformaPrimary
+        : colors.invoicePrimary;
       const invoiceTitleText = docTypeName.toUpperCase();
       doc
-        .fillColor(isProforma ? "#065F46" : "#1E3A8A")
+        .fillColor(headerColor)
         .fontSize(18)
         .font("Helvetica-Bold")
         .text(invoiceTitleText, LEFT, 36, { characterSpacing: 2 });
@@ -336,7 +389,7 @@ const generateInvoicePDF = async (invoice, settings) => {
         .font("Helvetica")
         .text(invoiceNoLabel, LEFT, 60);
       doc
-        .fillColor(isProforma ? "#065F46" : "#1E3A8A")
+        .fillColor(headerColor)
         .fontSize(11)
         .font("Helvetica-Bold")
         .text(taxInvNo, LEFT, 71);
@@ -562,13 +615,13 @@ const generateInvoicePDF = async (invoice, settings) => {
         tableY = 36;
       }
 
-      tableY = addTableHeader(doc, tableY, settings);
+      tableY = addTableHeader(doc, tableY, settings, colors.invoicePrimary);
 
       invoice.items.forEach((item, index) => {
         if (tableY > 680) {
           doc.addPage();
           tableY = 36;
-          tableY = addTableHeader(doc, tableY, settings);
+          tableY = addTableHeader(doc, tableY, settings, colors.invoicePrimary);
         }
         tableY = addTableRow(
           doc,
@@ -637,7 +690,7 @@ const generateInvoicePDF = async (invoice, settings) => {
 
       // Grand Total bar
       tableY += 8;
-      doc.rect(totalsLeft, tableY, 220, 22).fill("#1E3A8A");
+      doc.rect(totalsLeft, tableY, 220, 22).fill(colors.invoicePrimary);
       doc
         .fillColor("#FFFFFF")
         .fontSize(10)
@@ -671,14 +724,14 @@ const generateInvoicePDF = async (invoice, settings) => {
 
       // ── TOTAL IN WORDS ────────────────────────────────────────────────────
       tableY += 16;
-      doc.rect(LEFT, tableY, PAGE_WIDTH, 20).fill("#EFF6FF");
+      doc.rect(LEFT, tableY, PAGE_WIDTH, 20).fill(colors.amountWordsBg);
       doc
         .fillColor("#6B7280")
         .fontSize(7)
         .font("Helvetica")
         .text("TOTAL AMOUNT IN WORDS:", LEFT + 6, tableY + 4);
       doc
-        .fillColor("#1E3A8A")
+        .fillColor(colors.invoicePrimary)
         .fontSize(8)
         .font("Helvetica-Bold")
         .text(amountInWords(invoice.total, settings), LEFT + 130, tableY + 4, {
@@ -834,10 +887,10 @@ const fetchImageBuffer = async (imageUrl) => {
 };
 
 // Helper to add quotation table header (Invoice layout with Image column)
-const addQuotationTableHeader = (doc, y) => {
+const addQuotationTableHeader = (doc, y, primaryColor = "#1E3A8A") => {
   doc
     .rect(36, y, 523, 26)
-    .fill("#1E3A8A")
+    .fill(primaryColor)
     .fillColor("#FFFFFF")
     .fontSize(8)
     .font("Helvetica-Bold")
@@ -990,6 +1043,7 @@ const addQuotationTableRow = (
 const generateQuotationPDF = async (quotation, settings) => {
   return new Promise(async (resolve, reject) => {
     try {
+      const colors = getDocumentColors(settings);
       const effectiveSettings = quotation?.currency?.code
         ? {
             ...(settings?.toObject ? settings.toObject() : settings),
@@ -1040,7 +1094,7 @@ const generateQuotationPDF = async (quotation, settings) => {
 
       // ── HEADER ──────────────────────────────────────────────────────────
       doc
-        .fillColor("#1E3A8A")
+        .fillColor(colors.quotationPrimary)
         .fontSize(18)
         .font("Helvetica-Bold")
         .text("QUOTATION", LEFT, 36, { characterSpacing: 2 });
@@ -1051,7 +1105,7 @@ const generateQuotationPDF = async (quotation, settings) => {
         .font("Helvetica")
         .text("Quotation No.", LEFT, 60);
       doc
-        .fillColor("#1E3A8A")
+        .fillColor(colors.quotationPrimary)
         .fontSize(11)
         .font("Helvetica-Bold")
         .text(quotation.quotationNumber || "", LEFT, 71);
@@ -1062,7 +1116,7 @@ const generateQuotationPDF = async (quotation, settings) => {
       }
 
       // Blue header divider
-      doc.rect(LEFT, 96, PAGE_WIDTH, 2).fill("#1E3A8A");
+      doc.rect(LEFT, 96, PAGE_WIDTH, 2).fill(colors.quotationPrimary);
 
       // ── SUPPLIER & CUSTOMER ─────────────────────────────────────────────
       const boxTopY = 114;
@@ -1269,13 +1323,17 @@ const generateQuotationPDF = async (quotation, settings) => {
         tableY = 36;
       }
 
-      tableY = addQuotationTableHeader(doc, tableY);
+      tableY = addQuotationTableHeader(doc, tableY, colors.quotationPrimary);
 
       (quotation.items || []).forEach((item, index) => {
         if (tableY > 680) {
           doc.addPage();
           tableY = 36;
-          tableY = addQuotationTableHeader(doc, tableY);
+          tableY = addQuotationTableHeader(
+            doc,
+            tableY,
+            colors.quotationPrimary,
+          );
         }
         tableY = addQuotationTableRow(
           doc,
@@ -1354,7 +1412,7 @@ const generateQuotationPDF = async (quotation, settings) => {
 
       // Grand Total bar
       tableY += 8;
-      doc.rect(totalsLeft, tableY, 220, 22).fill("#1E3A8A");
+      doc.rect(totalsLeft, tableY, 220, 22).fill(colors.quotationPrimary);
       doc
         .fillColor("#FFFFFF")
         .fontSize(10)
@@ -1380,14 +1438,14 @@ const generateQuotationPDF = async (quotation, settings) => {
         tableY = 36;
       }
       tableY += 8;
-      doc.rect(LEFT, tableY, PAGE_WIDTH, 20).fill("#EFF6FF");
+      doc.rect(LEFT, tableY, PAGE_WIDTH, 20).fill(colors.amountWordsBg);
       doc
         .fillColor("#6B7280")
         .fontSize(7)
         .font("Helvetica")
         .text("TOTAL AMOUNT IN WORDS:", LEFT + 6, tableY + 6);
       doc
-        .fillColor("#1E3A8A")
+        .fillColor(colors.quotationPrimary)
         .fontSize(8)
         .font("Helvetica-Bold")
         .text(

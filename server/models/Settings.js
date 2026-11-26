@@ -56,6 +56,12 @@ const settingsSchema = new mongoose.Schema(
       quotation: { type: String, default: "" },
       deliveryReceipt: { type: String, default: "" },
     },
+    documentColors: {
+      invoicePrimary: { type: String, default: "#1E3A8A" },
+      proformaPrimary: { type: String, default: "#065F46" },
+      quotationPrimary: { type: String, default: "#1E3A8A" },
+      amountWordsBg: { type: String, default: "#EFF6FF" },
+    },
     wooCommerce: {
       url: { type: String, default: "" },
       consumerKey: { type: String, default: "" },

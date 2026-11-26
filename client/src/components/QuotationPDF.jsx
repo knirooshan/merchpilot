@@ -14,6 +14,7 @@ import {
 } from "../utils/currency";
 import { formatDate } from "../utils/date";
 import { getTaxDisplay } from "../utils/taxDisplay";
+import { getDocumentColors } from "../utils/documentColors";
 import { renderHtmlToPdf } from "../utils/pdfUtils.jsx";
 
 // ---------------------------------------------------------------------------
@@ -402,6 +403,7 @@ const hasContent = (html) => {
 
 const QuotationPDF = ({ quotation, settings }) => {
   const effectiveSettings = getDocumentCurrencySettings(quotation, settings);
+  const colors = getDocumentColors(settings);
   const taxInfo = getTaxDisplay(quotation, settings);
   const supplierTIN = settings?.taxIdNo || "";
   const purchaserTIN = quotation.customer?.taxNumber || "";
@@ -436,9 +438,16 @@ const QuotationPDF = ({ quotation, settings }) => {
         {/* ── Header ── */}
         <View style={styles.headerRow}>
           <View style={styles.titleBlock}>
-            <Text style={styles.titleText}>QUOTATION</Text>
+            <Text style={[styles.titleText, { color: colors.quotationPrimary }]}>
+              QUOTATION
+            </Text>
             <Text style={styles.taxInvNoLabel}>Quotation No.</Text>
-            <Text style={styles.taxInvNoValue}>
+            <Text
+              style={[
+                styles.taxInvNoValue,
+                { color: colors.quotationPrimary },
+              ]}
+            >
               {quotation.quotationNumber}
             </Text>
           </View>
@@ -449,7 +458,12 @@ const QuotationPDF = ({ quotation, settings }) => {
           </View>
         </View>
 
-        <View style={styles.headerDivider} />
+        <View
+          style={[
+            styles.headerDivider,
+            { backgroundColor: colors.quotationPrimary },
+          ]}
+        />
 
         {/* ── Supplier & Customer Info ── */}
         <View style={styles.infoGrid}>
@@ -543,7 +557,12 @@ const QuotationPDF = ({ quotation, settings }) => {
         {/* ── Items Table ── */}
         <View style={styles.table}>
           {/* Header */}
-          <View style={styles.tableHeader}>
+          <View
+            style={[
+              styles.tableHeader,
+              { backgroundColor: colors.quotationPrimary },
+            ]}
+          >
             <View style={styles.colRef}>
               <Text style={styles.thText}>Ref</Text>
             </View>
@@ -677,7 +696,12 @@ const QuotationPDF = ({ quotation, settings }) => {
             )}
 
             {/* Grand Total */}
-            <View style={styles.grandTotalRow}>
+            <View
+              style={[
+                styles.grandTotalRow,
+                { backgroundColor: colors.quotationPrimary },
+              ]}
+            >
               <Text style={styles.grandTotalLabel}>Total Amount</Text>
               <Text style={styles.grandTotalValue}>
                 {formatCurrency(quotation.total, effectiveSettings)}
@@ -687,9 +711,19 @@ const QuotationPDF = ({ quotation, settings }) => {
         </View>
 
         {/* ── Total in Words ── */}
-        <View style={styles.amountWords}>
+        <View
+          style={[
+            styles.amountWords,
+            { backgroundColor: colors.amountWordsBg },
+          ]}
+        >
           <Text style={styles.amountWordsLabel}>Total Amount in Words</Text>
-          <Text style={styles.amountWordsText}>
+          <Text
+            style={[
+              styles.amountWordsText,
+              { color: colors.quotationPrimary },
+            ]}
+          >
             {amountInWords(quotation.total, effectiveSettings)}
           </Text>
         </View>

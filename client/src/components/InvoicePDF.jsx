@@ -14,6 +14,7 @@ import {
 } from "../utils/currency";
 import { formatDate } from "../utils/date";
 import { getTaxDisplay } from "../utils/taxDisplay";
+import { getDocumentColors } from "../utils/documentColors";
 import { renderHtmlToPdf } from "../utils/pdfUtils.jsx";
 
 // ---------------------------------------------------------------------------
@@ -425,6 +426,10 @@ const hasContent = (html) => {
 const InvoicePDF = ({ invoice, settings }) => {
   const isProforma = invoice?.invoiceType === "proforma";
   const effectiveSettings = getDocumentCurrencySettings(invoice, settings);
+  const colors = getDocumentColors(settings);
+  const headerColor = isProforma
+    ? colors.proformaPrimary
+    : colors.invoicePrimary;
   const amountPaid = invoice.amountPaid || 0;
   const balanceDue =
     invoice.balanceDue !== undefined
@@ -472,7 +477,10 @@ const InvoicePDF = ({ invoice, settings }) => {
         <View style={styles.headerRow}>
           <View style={styles.titleBlock}>
             <Text
-              style={isProforma ? styles.titleTextProforma : styles.titleText}
+              style={[
+                isProforma ? styles.titleTextProforma : styles.titleText,
+                { color: headerColor },
+              ]}
             >
               {isProforma ? "PROFORMA INVOICE" : documentTitle.toUpperCase()}
             </Text>
@@ -480,9 +488,10 @@ const InvoicePDF = ({ invoice, settings }) => {
               {`${documentTitle} No.`}
             </Text>
             <Text
-              style={
-                isProforma ? styles.taxInvNoValueProforma : styles.taxInvNoValue
-              }
+              style={[
+                isProforma ? styles.taxInvNoValueProforma : styles.taxInvNoValue,
+                { color: headerColor },
+              ]}
             >
               {invoice.taxInvoiceNumber || invoice.invoiceNumber}
             </Text>
@@ -502,9 +511,10 @@ const InvoicePDF = ({ invoice, settings }) => {
         </View>
 
         <View
-          style={
-            isProforma ? styles.headerDividerProforma : styles.headerDivider
-          }
+          style={[
+            isProforma ? styles.headerDividerProforma : styles.headerDivider,
+            { backgroundColor: headerColor },
+          ]}
         />
 
         {/* ── Supplier & Purchaser Info ── */}
@@ -623,7 +633,12 @@ const InvoicePDF = ({ invoice, settings }) => {
         {/* ── Items Table ── */}
         <View style={styles.table}>
           {/* Header */}
-          <View style={styles.tableHeader}>
+          <View
+            style={[
+              styles.tableHeader,
+              { backgroundColor: colors.invoicePrimary },
+            ]}
+          >
             <View style={styles.colRef}>
               <Text style={styles.thText}>Ref</Text>
             </View>
@@ -743,7 +758,12 @@ const InvoicePDF = ({ invoice, settings }) => {
             )}
 
             {/* Grand Total */}
-            <View style={styles.grandTotalRow}>
+            <View
+              style={[
+                styles.grandTotalRow,
+                { backgroundColor: colors.invoicePrimary },
+              ]}
+            >
               <Text style={styles.grandTotalLabel}>Total Amount</Text>
               <Text style={styles.grandTotalValue}>
                 {formatCurrency(invoice.total, effectiveSettings)}
@@ -778,9 +798,19 @@ const InvoicePDF = ({ invoice, settings }) => {
         </View>
 
         {/* ── Total in Words ── */}
-        <View style={styles.amountWords}>
+        <View
+          style={[
+            styles.amountWords,
+            { backgroundColor: colors.amountWordsBg },
+          ]}
+        >
           <Text style={styles.amountWordsLabel}>Total Amount in Words</Text>
-          <Text style={styles.amountWordsText}>
+          <Text
+            style={[
+              styles.amountWordsText,
+              { color: colors.invoicePrimary },
+            ]}
+          >
             {amountInWords(invoice.total, effectiveSettings)}
           </Text>
         </View>

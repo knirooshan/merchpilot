@@ -49,7 +49,7 @@ const StatusBadge = ({ status }) => (
 
 const DaysOverdueBadge = ({ days }) => {
   if (!days || days <= 0)
-    return <span className="text-slate-500 text-xs">—</span>;
+    return <span className="text-slate-500 text-xs">-</span>;
   const cls =
     days > 60
       ? "bg-red-900/50 text-red-300"
@@ -219,10 +219,10 @@ const OutstandingInvoices = () => {
       accessor: (inv) =>
         inv.customer
           ? `${inv.customer.firstName || ""} ${inv.customer.lastName || ""}`.trim() ||
-            inv.customer.billing?.company ||
-            ""
+          inv.customer.billing?.company ||
+          ""
           : inv.customerInfo?.company ||
-            `${inv.customerInfo?.firstName || ""} ${inv.customerInfo?.lastName || ""}`.trim(),
+          `${inv.customerInfo?.firstName || ""} ${inv.customerInfo?.lastName || ""}`.trim(),
     },
     {
       key: "email",
