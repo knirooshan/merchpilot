@@ -145,60 +145,46 @@ const urlToBase64 = async (req, res) => {
         .json({ message: "URL does not point to a supported image" });
     }
 
-    // Convert WebP to JPEG for better PDF compatibility, and resize large
-    // images so they remain PDF-friendly (react-pdf / pdfkit handle smaller
-    // base64 payloads much more reliably).
+    // Convert WebP to PNG (if transparent) or JPEG (if opaque) for PDF
+    // compatibility, and resize large images so they remain PDF-friendly.
     let imageBuffer = Buffer.from(response.data);
     let finalContentType = contentType;
 
     const PDF_MAX_DIM = 1200; // px – enough resolution for A4 print quality
+    const isWebp = contentType === "image/webp" || contentType.includes("webp");
 
-    if (contentType === "image/webp" || contentType.includes("webp")) {
-      try {
-        const meta = await sharp(imageBuffer).metadata();
-        const needsResize =
-          (meta.width || 0) > PDF_MAX_DIM || (meta.height || 0) > PDF_MAX_DIM;
-        imageBuffer = await sharp(imageBuffer)
-          .resize(
-            needsResize ? PDF_MAX_DIM : undefined,
-            needsResize ? PDF_MAX_DIM : undefined,
-            {
-              fit: "inside",
-              withoutEnlargement: true,
-            },
-          )
-          .jpeg({ quality: 85 })
-          .toBuffer();
-        finalContentType = "image/jpeg";
-      } catch (sharpError) {
-        console.log(
-          "Sharp conversion failed, using original image:",
-          sharpError.message,
-        );
-      }
-    } else {
-      // For non-WebP images, still resize if they are very large
-      try {
-        const meta = await sharp(imageBuffer).metadata();
-        if (
-          (meta.width || 0) > PDF_MAX_DIM ||
-          (meta.height || 0) > PDF_MAX_DIM
-        ) {
-          imageBuffer = await sharp(imageBuffer)
-            .resize(PDF_MAX_DIM, PDF_MAX_DIM, {
-              fit: "inside",
-              withoutEnlargement: true,
-            })
-            .jpeg({ quality: 85 })
-            .toBuffer();
+    try {
+      const meta = await sharp(imageBuffer).metadata();
+      const needsResize =
+        (meta.width || 0) > PDF_MAX_DIM || (meta.height || 0) > PDF_MAX_DIM;
+
+      if (isWebp || needsResize) {
+        const preserveAlpha =
+          Boolean(meta.hasAlpha) ||
+          contentType === "image/png" ||
+          contentType === "image/svg+xml";
+
+        let pipeline = sharp(imageBuffer);
+        if (needsResize) {
+          pipeline = pipeline.resize(PDF_MAX_DIM, PDF_MAX_DIM, {
+            fit: "inside",
+            withoutEnlargement: true,
+          });
+        }
+
+        if (preserveAlpha) {
+          imageBuffer = await pipeline.png({ compressionLevel: 8 }).toBuffer();
+          finalContentType = "image/png";
+        } else {
+          imageBuffer = await pipeline.jpeg({ quality: 85 }).toBuffer();
           finalContentType = "image/jpeg";
         }
-      } catch (sharpError) {
-        console.log(
-          "Sharp resize failed, using original image:",
-          sharpError.message,
-        );
       }
+    } catch (sharpError) {
+      console.log(
+        "Sharp conversion failed, using original image:",
+        sharpError.message,
+      );
     }
 
     // Convert to base64
