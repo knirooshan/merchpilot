@@ -461,7 +461,7 @@ const QuotationPDF = ({ quotation, settings }) => {
         <View
           style={[
             styles.headerDivider,
-            { backgroundColor: colors.quotationPrimary },
+            { backgroundColor: colors.quotationAccent },
           ]}
         />
 
@@ -523,17 +523,18 @@ const QuotationPDF = ({ quotation, settings }) => {
           <View style={styles.detailCell}>
             <Text style={styles.detailLabel}>Date Issued</Text>
             <Text style={styles.detailValue}>
-              {formatDate(
-                quotation.quotationDate || quotation.createdAt,
-                settings,
-              )}
+              {formatDate(quotation.quotationDate || quotation.createdAt, {
+                dateTime: { dateFormat: "MM/DD/YYYY" },
+              })}
             </Text>
           </View>
           {quotation.validUntil && (
             <View style={styles.detailCell}>
               <Text style={styles.detailLabel}>Valid Until</Text>
               <Text style={styles.detailValue}>
-                {formatDate(quotation.validUntil, settings)}
+                {formatDate(quotation.validUntil, {
+                  dateTime: { dateFormat: "MM/DD/YYYY" },
+                })}
               </Text>
             </View>
           )}

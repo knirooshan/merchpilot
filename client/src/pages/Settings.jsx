@@ -626,32 +626,70 @@ const Settings = () => {
         {/* Document Colors */}
         {(() => {
           const previewColors = getDocumentColors(formData);
-          const colorFields = [
+          const colorGroups = [
             {
-              key: "invoicePrimary",
-              label: "Invoice Primary Color",
-              description:
-                "Header title, divider, table header, total bar, and words text on invoices.",
+              title: "Invoice",
+              primaryKey: "invoicePrimary",
+              primaryLabel: "Header & Table Color",
+              primaryDesc:
+                "Title, invoice number, table header, total bar, and words text.",
+              accentKey: "invoiceAccent",
+              accentLabel: "Header Line (Accent) Color",
+              accentDesc: "Divider line below the invoice header.",
             },
             {
-              key: "proformaPrimary",
-              label: "Proforma Invoice Color",
-              description:
-                "Title, number, and header divider on proforma invoices.",
+              title: "Proforma Invoice",
+              primaryKey: "proformaPrimary",
+              primaryLabel: "Header Color",
+              primaryDesc: "Title and proforma invoice number.",
+              accentKey: "proformaAccent",
+              accentLabel: "Header Line (Accent) Color",
+              accentDesc: "Divider line below the proforma invoice header.",
             },
             {
-              key: "quotationPrimary",
-              label: "Quotation Primary Color",
-              description:
-                "Header title, divider, table header, total bar, and words text on quotations.",
-            },
-            {
-              key: "amountWordsBg",
-              label: "Amount in Words Background",
-              description:
-                "Highlight box background for Total Amount in Words on invoices & quotations.",
+              title: "Quotation",
+              primaryKey: "quotationPrimary",
+              primaryLabel: "Header & Table Color",
+              primaryDesc:
+                "Title, quotation number, table header, total bar, and words text.",
+              accentKey: "quotationAccent",
+              accentLabel: "Header Line (Accent) Color",
+              accentDesc: "Divider line below the quotation header.",
             },
           ];
+
+          const renderColorField = (key, label, description) => {
+            const rawValue =
+              formData.documentColors?.[key] ?? DEFAULT_DOCUMENT_COLORS[key];
+            const safeSwatch = previewColors[key];
+
+            return (
+              <div key={key}>
+                <label className="block text-sm font-medium text-slate-300">
+                  {label}
+                </label>
+                <div className="mt-1.5 flex items-center gap-3">
+                  <input
+                    type="color"
+                    aria-label={`${label} picker`}
+                    name={key}
+                    value={safeSwatch}
+                    onChange={(e) => handleChange(e, "documentColors")}
+                    className="h-9 w-12 cursor-pointer rounded border border-slate-700 bg-slate-950 p-0.5"
+                  />
+                  <input
+                    type="text"
+                    name={key}
+                    value={rawValue}
+                    onChange={(e) => handleChange(e, "documentColors")}
+                    placeholder={DEFAULT_DOCUMENT_COLORS[key]}
+                    className="block w-full bg-slate-950 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white font-mono uppercase focus:outline-none focus:ring-blue-600 focus:border-blue-600 sm:text-sm"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-slate-400">{description}</p>
+              </div>
+            );
+          };
 
           return (
             <div className="bg-slate-900 shadow rounded-lg p-6 border border-slate-800">
@@ -673,42 +711,38 @@ const Settings = () => {
                   Reset to Defaults
                 </button>
               </div>
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                {colorFields.map(({ key, label, description }) => {
-                  const rawValue =
-                    formData.documentColors?.[key] ??
-                    DEFAULT_DOCUMENT_COLORS[key];
-                  const safeSwatch = previewColors[key];
 
-                  return (
-                    <div key={key}>
-                      <label className="block text-sm font-medium text-slate-300">
-                        {label}
-                      </label>
-                      <div className="mt-1.5 flex items-center gap-3">
-                        <input
-                          type="color"
-                          aria-label={`${label} picker`}
-                          name={key}
-                          value={safeSwatch}
-                          onChange={(e) => handleChange(e, "documentColors")}
-                          className="h-9 w-12 cursor-pointer rounded border border-slate-700 bg-slate-950 p-0.5"
-                        />
-                        <input
-                          type="text"
-                          name={key}
-                          value={rawValue}
-                          onChange={(e) => handleChange(e, "documentColors")}
-                          placeholder={DEFAULT_DOCUMENT_COLORS[key]}
-                          className="block w-full bg-slate-950 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white font-mono uppercase focus:outline-none focus:ring-blue-600 focus:border-blue-600 sm:text-sm"
-                        />
-                      </div>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {description}
-                      </p>
+              <div className="space-y-6">
+                {colorGroups.map((group) => (
+                  <div
+                    key={group.title}
+                    className="rounded-md border border-slate-800 bg-slate-950/40 p-4"
+                  >
+                    <h3 className="text-sm font-semibold text-slate-200 mb-3">
+                      {group.title}
+                    </h3>
+                    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                      {renderColorField(
+                        group.primaryKey,
+                        group.primaryLabel,
+                        group.primaryDesc,
+                      )}
+                      {renderColorField(
+                        group.accentKey,
+                        group.accentLabel,
+                        group.accentDesc,
+                      )}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
+
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                  {renderColorField(
+                    "amountWordsBg",
+                    "Amount in Words Background",
+                    "Highlight box background for Total Amount in Words on invoices & quotations.",
+                  )}
+                </div>
               </div>
 
               {/* Compact Live Preview */}
@@ -716,7 +750,7 @@ const Settings = () => {
                 <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">
                   PDF Accent Preview
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="bg-white rounded p-3 border border-slate-200 space-y-2">
                     <div className="flex items-center justify-between">
                       <span
@@ -725,16 +759,49 @@ const Settings = () => {
                       >
                         TAX INVOICE
                       </span>
-                      <span
-                        className="text-[11px] font-bold"
-                        style={{ color: previewColors.proformaPrimary }}
-                      >
-                        PROFORMA
+                      <span className="text-[11px] text-slate-500">
+                        #INV-0001
                       </span>
                     </div>
                     <div
                       className="h-0.5 w-full"
-                      style={{ backgroundColor: previewColors.invoicePrimary }}
+                      style={{ backgroundColor: previewColors.invoiceAccent }}
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <div
+                        className="px-2 py-1 rounded text-[10px] font-bold flex-1"
+                        style={{
+                          backgroundColor: previewColors.amountWordsBg,
+                          color: previewColors.invoicePrimary,
+                        }}
+                      >
+                        Words Highlight
+                      </div>
+                      <div
+                        className="px-2 py-1 rounded text-[10px] font-bold text-white"
+                        style={{
+                          backgroundColor: previewColors.invoicePrimary,
+                        }}
+                      >
+                        Total Bar
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-white rounded p-3 border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="text-xs font-bold tracking-widest"
+                        style={{ color: previewColors.proformaPrimary }}
+                      >
+                        PROFORMA
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        #PRO-0001
+                      </span>
+                    </div>
+                    <div
+                      className="h-0.5 w-full"
+                      style={{ backgroundColor: previewColors.proformaAccent }}
                     />
                     <div className="flex items-center justify-between gap-2">
                       <div
@@ -771,7 +838,7 @@ const Settings = () => {
                     <div
                       className="h-0.5 w-full"
                       style={{
-                        backgroundColor: previewColors.quotationPrimary,
+                        backgroundColor: previewColors.quotationAccent,
                       }}
                     />
                     <div className="flex items-center justify-between gap-2">

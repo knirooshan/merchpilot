@@ -2,8 +2,11 @@ const { getTenantModels } = require("../models/tenantModels");
 
 const DEFAULT_DOCUMENT_COLORS = {
   invoicePrimary: "#1E3A8A",
+  invoiceAccent: "#1E3A8A",
   proformaPrimary: "#065F46",
+  proformaAccent: "#065F46",
   quotationPrimary: "#1E3A8A",
+  quotationAccent: "#1E3A8A",
   amountWordsBg: "#EFF6FF",
 };
 

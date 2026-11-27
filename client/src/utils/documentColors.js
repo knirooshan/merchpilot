@@ -1,7 +1,10 @@
 export const DEFAULT_DOCUMENT_COLORS = {
   invoicePrimary: "#1E3A8A",
+  invoiceAccent: "#1E3A8A",
   proformaPrimary: "#065F46",
+  proformaAccent: "#065F46",
   quotationPrimary: "#1E3A8A",
+  quotationAccent: "#1E3A8A",
   amountWordsBg: "#EFF6FF",
 };
 
@@ -32,13 +35,25 @@ export const getDocumentColors = (settings) => {
       raw.invoicePrimary,
       DEFAULT_DOCUMENT_COLORS.invoicePrimary,
     ),
+    invoiceAccent: normalizeHexColor(
+      raw.invoiceAccent,
+      DEFAULT_DOCUMENT_COLORS.invoiceAccent,
+    ),
     proformaPrimary: normalizeHexColor(
       raw.proformaPrimary,
       DEFAULT_DOCUMENT_COLORS.proformaPrimary,
     ),
+    proformaAccent: normalizeHexColor(
+      raw.proformaAccent,
+      DEFAULT_DOCUMENT_COLORS.proformaAccent,
+    ),
     quotationPrimary: normalizeHexColor(
       raw.quotationPrimary,
       DEFAULT_DOCUMENT_COLORS.quotationPrimary,
+    ),
+    quotationAccent: normalizeHexColor(
+      raw.quotationAccent,
+      DEFAULT_DOCUMENT_COLORS.quotationAccent,
     ),
     amountWordsBg: normalizeHexColor(
       raw.amountWordsBg,
