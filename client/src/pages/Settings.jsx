@@ -3,10 +3,14 @@ import { useSelector, useDispatch } from "react-redux";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ENDPOINTS } from "../config/api";
 import apiClient from "../api/apiClient";
-import { Save } from "lucide-react";
+import { Save, RotateCcw } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { fetchSettings } from "../store/slices/settingsSlice";
 import { invalidateOnSettingsMutation } from "../lib/queryInvalidation";
+import {
+  DEFAULT_DOCUMENT_COLORS,
+  getDocumentColors,
+} from "../utils/documentColors";
 
 import MediaLibraryModal from "../components/MediaLibraryModal";
 import RichTextEditor from "../components/RichTextEditor";
@@ -43,6 +47,7 @@ const Settings = () => {
     },
     dateTime: { dateFormat: "MM/DD/YYYY", timeFormat: "12h", timezone: "UTC" },
     terms: { invoice: "", quotation: "", deliveryReceipt: "" },
+    documentColors: { ...DEFAULT_DOCUMENT_COLORS },
     ird: { departmentCode: "BR01", placeOfSupply: "" },
     wooCommerce: { url: "", consumerKey: "", consumerSecret: "" },
     medusa: { url: "", apiKey: "", publishableKey: "" },
@@ -58,7 +63,13 @@ const Settings = () => {
 
   useEffect(() => {
     if (settings) {
-      setFormData(settings);
+      setFormData({
+        ...settings,
+        documentColors: {
+          ...DEFAULT_DOCUMENT_COLORS,
+          ...(settings.documentColors || {}),
+        },
+      });
     }
   }, [settings]);
 
@@ -88,7 +99,7 @@ const Settings = () => {
     if (section) {
       setFormData((prev) => ({
         ...prev,
-        [section]: { ...prev[section], [name]: val },
+        [section]: { ...(prev[section] || {}), [name]: val },
       }));
     } else {
       setFormData((prev) => ({ ...prev, [name]: val }));
@@ -611,6 +622,183 @@ const Settings = () => {
             </div>
           </div>
         </div>
+
+        {/* Document Colors */}
+        {(() => {
+          const previewColors = getDocumentColors(formData);
+          const colorFields = [
+            {
+              key: "invoicePrimary",
+              label: "Invoice Primary Color",
+              description:
+                "Header title, divider, table header, total bar, and words text on invoices.",
+            },
+            {
+              key: "proformaPrimary",
+              label: "Proforma Invoice Color",
+              description:
+                "Title, number, and header divider on proforma invoices.",
+            },
+            {
+              key: "quotationPrimary",
+              label: "Quotation Primary Color",
+              description:
+                "Header title, divider, table header, total bar, and words text on quotations.",
+            },
+            {
+              key: "amountWordsBg",
+              label: "Amount in Words Background",
+              description:
+                "Highlight box background for Total Amount in Words on invoices & quotations.",
+            },
+          ];
+
+          return (
+            <div className="bg-slate-900 shadow rounded-lg p-6 border border-slate-800">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4 border-b border-slate-800 pb-2">
+                <h2 className="text-lg font-medium text-white">
+                  Document Colors (Invoice & Quotation)
+                </h2>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      documentColors: { ...DEFAULT_DOCUMENT_COLORS },
+                    }))
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 text-slate-300 rounded hover:bg-slate-700 hover:text-white transition-colors text-xs font-medium"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reset to Defaults
+                </button>
+              </div>
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                {colorFields.map(({ key, label, description }) => {
+                  const rawValue =
+                    formData.documentColors?.[key] ??
+                    DEFAULT_DOCUMENT_COLORS[key];
+                  const safeSwatch = previewColors[key];
+
+                  return (
+                    <div key={key}>
+                      <label className="block text-sm font-medium text-slate-300">
+                        {label}
+                      </label>
+                      <div className="mt-1.5 flex items-center gap-3">
+                        <input
+                          type="color"
+                          aria-label={`${label} picker`}
+                          name={key}
+                          value={safeSwatch}
+                          onChange={(e) => handleChange(e, "documentColors")}
+                          className="h-9 w-12 cursor-pointer rounded border border-slate-700 bg-slate-950 p-0.5"
+                        />
+                        <input
+                          type="text"
+                          name={key}
+                          value={rawValue}
+                          onChange={(e) => handleChange(e, "documentColors")}
+                          placeholder={DEFAULT_DOCUMENT_COLORS[key]}
+                          className="block w-full bg-slate-950 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white font-mono uppercase focus:outline-none focus:ring-blue-600 focus:border-blue-600 sm:text-sm"
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {description}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Compact Live Preview */}
+              <div className="mt-6 pt-4 border-t border-slate-800">
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">
+                  PDF Accent Preview
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-white rounded p-3 border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="text-xs font-bold tracking-widest"
+                        style={{ color: previewColors.invoicePrimary }}
+                      >
+                        TAX INVOICE
+                      </span>
+                      <span
+                        className="text-[11px] font-bold"
+                        style={{ color: previewColors.proformaPrimary }}
+                      >
+                        PROFORMA
+                      </span>
+                    </div>
+                    <div
+                      className="h-0.5 w-full"
+                      style={{ backgroundColor: previewColors.invoicePrimary }}
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <div
+                        className="px-2 py-1 rounded text-[10px] font-bold flex-1"
+                        style={{
+                          backgroundColor: previewColors.amountWordsBg,
+                          color: previewColors.invoicePrimary,
+                        }}
+                      >
+                        Words Highlight
+                      </div>
+                      <div
+                        className="px-2 py-1 rounded text-[10px] font-bold text-white"
+                        style={{
+                          backgroundColor: previewColors.invoicePrimary,
+                        }}
+                      >
+                        Total Bar
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-white rounded p-3 border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="text-xs font-bold tracking-widest"
+                        style={{ color: previewColors.quotationPrimary }}
+                      >
+                        QUOTATION
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        #QT-0001
+                      </span>
+                    </div>
+                    <div
+                      className="h-0.5 w-full"
+                      style={{
+                        backgroundColor: previewColors.quotationPrimary,
+                      }}
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <div
+                        className="px-2 py-1 rounded text-[10px] font-bold flex-1"
+                        style={{
+                          backgroundColor: previewColors.amountWordsBg,
+                          color: previewColors.quotationPrimary,
+                        }}
+                      >
+                        Words Highlight
+                      </div>
+                      <div
+                        className="px-2 py-1 rounded text-[10px] font-bold text-white"
+                        style={{
+                          backgroundColor: previewColors.quotationPrimary,
+                        }}
+                      >
+                        Total Bar
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Terms & Conditions Defaults */}
         <div className="bg-slate-900 shadow rounded-lg p-6 border border-slate-800">

@@ -1,6 +1,56 @@
 const PDFDocument = require("pdfkit");
 const axios = require("axios");
+const sharp = require("sharp");
 const { getTaxDisplay } = require("../utils/taxDisplay");
+
+const DEFAULT_DOCUMENT_COLORS = {
+  invoicePrimary: "#1E3A8A",
+  proformaPrimary: "#065F46",
+  quotationPrimary: "#1E3A8A",
+  amountWordsBg: "#EFF6FF",
+};
+
+const HEX_COLOR_RE = /^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/;
+
+const normalizeHexColor = (value, fallback) => {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  if (!HEX_COLOR_RE.test(trimmed)) return fallback;
+  if (trimmed.length === 4) {
+    return (
+      "#" +
+      trimmed
+        .slice(1)
+        .split("")
+        .map((c) => c + c)
+        .join("")
+        .toUpperCase()
+    );
+  }
+  return trimmed.toUpperCase();
+};
+
+const getDocumentColors = (settings) => {
+  const raw = settings?.documentColors || {};
+  return {
+    invoicePrimary: normalizeHexColor(
+      raw.invoicePrimary,
+      DEFAULT_DOCUMENT_COLORS.invoicePrimary,
+    ),
+    proformaPrimary: normalizeHexColor(
+      raw.proformaPrimary,
+      DEFAULT_DOCUMENT_COLORS.proformaPrimary,
+    ),
+    quotationPrimary: normalizeHexColor(
+      raw.quotationPrimary,
+      DEFAULT_DOCUMENT_COLORS.quotationPrimary,
+    ),
+    amountWordsBg: normalizeHexColor(
+      raw.amountWordsBg,
+      DEFAULT_DOCUMENT_COLORS.amountWordsBg,
+    ),
+  };
+};
 
 // ---------------------------------------------------------------------------
 // Number to Words (LKR-style)
@@ -197,10 +247,10 @@ const drawLine = (doc, y, color = "#E5E7EB", lineWidth = 1) => {
 };
 
 // Helper to add table header (gazette-compliant columns)
-const addTableHeader = (doc, y, settings) => {
+const addTableHeader = (doc, y, settings, primaryColor = "#1E3A8A") => {
   doc
     .rect(50, y, 500, 26)
-    .fill("#1E3A8A")
+    .fill(primaryColor)
     .fillColor("#FFFFFF")
     .fontSize(8)
     .font("Helvetica-Bold")
@@ -282,6 +332,7 @@ const addTableRow = (doc, y, item, settings, isLast = false, rowIndex = 0) => {
 const generateInvoicePDF = async (invoice, settings) => {
   return new Promise(async (resolve, reject) => {
     try {
+      const colors = getDocumentColors(settings);
       const taxInfo = getTaxDisplay(invoice, settings);
       // Only VAT-registered suppliers may issue a "Tax Invoice"
       const docTypeName =
@@ -319,9 +370,12 @@ const generateInvoicePDF = async (invoice, settings) => {
       // ── HEADER ──────────────────────────────────────────────────────────
       // Invoice title (left)
       const isProforma = invoice.invoiceType === "proforma";
+      const headerColor = isProforma
+        ? colors.proformaPrimary
+        : colors.invoicePrimary;
       const invoiceTitleText = docTypeName.toUpperCase();
       doc
-        .fillColor(isProforma ? "#065F46" : "#1E3A8A")
+        .fillColor(headerColor)
         .fontSize(18)
         .font("Helvetica-Bold")
         .text(invoiceTitleText, LEFT, 36, { characterSpacing: 2 });
@@ -335,7 +389,7 @@ const generateInvoicePDF = async (invoice, settings) => {
         .font("Helvetica")
         .text(invoiceNoLabel, LEFT, 60);
       doc
-        .fillColor(isProforma ? "#065F46" : "#1E3A8A")
+        .fillColor(headerColor)
         .fontSize(11)
         .font("Helvetica-Bold")
         .text(taxInvNo, LEFT, 71);
@@ -561,13 +615,13 @@ const generateInvoicePDF = async (invoice, settings) => {
         tableY = 36;
       }
 
-      tableY = addTableHeader(doc, tableY, settings);
+      tableY = addTableHeader(doc, tableY, settings, colors.invoicePrimary);
 
       invoice.items.forEach((item, index) => {
         if (tableY > 680) {
           doc.addPage();
           tableY = 36;
-          tableY = addTableHeader(doc, tableY, settings);
+          tableY = addTableHeader(doc, tableY, settings, colors.invoicePrimary);
         }
         tableY = addTableRow(
           doc,
@@ -636,7 +690,7 @@ const generateInvoicePDF = async (invoice, settings) => {
 
       // Grand Total bar
       tableY += 8;
-      doc.rect(totalsLeft, tableY, 220, 22).fill("#1E3A8A");
+      doc.rect(totalsLeft, tableY, 220, 22).fill(colors.invoicePrimary);
       doc
         .fillColor("#FFFFFF")
         .fontSize(10)
@@ -670,14 +724,14 @@ const generateInvoicePDF = async (invoice, settings) => {
 
       // ── TOTAL IN WORDS ────────────────────────────────────────────────────
       tableY += 16;
-      doc.rect(LEFT, tableY, PAGE_WIDTH, 20).fill("#EFF6FF");
+      doc.rect(LEFT, tableY, PAGE_WIDTH, 20).fill(colors.amountWordsBg);
       doc
         .fillColor("#6B7280")
         .fontSize(7)
         .font("Helvetica")
         .text("TOTAL AMOUNT IN WORDS:", LEFT + 6, tableY + 4);
       doc
-        .fillColor("#1E3A8A")
+        .fillColor(colors.invoicePrimary)
         .fontSize(8)
         .font("Helvetica-Bold")
         .text(amountInWords(invoice.total, settings), LEFT + 130, tableY + 4, {
@@ -802,16 +856,225 @@ const generateInvoicePDF = async (invoice, settings) => {
   });
 };
 
+// Helper to fetch/decode and normalize item image buffers for PDFKit
+const fetchImageBuffer = async (imageUrl) => {
+  try {
+    if (!imageUrl || typeof imageUrl !== "string") return null;
+
+    let rawBuffer;
+    if (imageUrl.startsWith("data:")) {
+      const commaIndex = imageUrl.indexOf(",");
+      if (commaIndex === -1) return null;
+      const base64Data = imageUrl.slice(commaIndex + 1);
+      rawBuffer = Buffer.from(base64Data, "base64");
+    } else {
+      const response = await axios.get(imageUrl, {
+        responseType: "arraybuffer",
+        timeout: 10000,
+      });
+      rawBuffer = Buffer.from(response.data);
+    }
+
+    try {
+      return await sharp(rawBuffer).png().toBuffer();
+    } catch {
+      return rawBuffer;
+    }
+  } catch (error) {
+    console.error("Error fetching item image:", error.message);
+    return null;
+  }
+};
+
+// Helper to add quotation table header (Invoice layout with Image column)
+const addQuotationTableHeader = (doc, y, primaryColor = "#1E3A8A") => {
+  doc
+    .rect(36, y, 523, 26)
+    .fill(primaryColor)
+    .fillColor("#FFFFFF")
+    .fontSize(8)
+    .font("Helvetica-Bold")
+    .text("#", 42, y + 9, { width: 22, align: "left" })
+    .text("IMAGE", 68, y + 9, { width: 40, align: "left" })
+    .text("DESCRIPTION OF GOODS / SERVICES", 114, y + 9, {
+      width: 185,
+      align: "left",
+    })
+    .text("QTY", 303, y + 9, { width: 45, align: "right" })
+    .text("UNIT PRICE", 352, y + 9, { width: 90, align: "right" })
+    .text("AMOUNT", 446, y + 9, { width: 107, align: "right" });
+
+  return y + 26;
+};
+
+// Helper to add quotation table row (Invoice layout with Image column)
+const addQuotationTableRow = (
+  doc,
+  y,
+  item,
+  imageBuffer,
+  effectiveSettings,
+  isLast = false,
+  rowIndex = 0,
+) => {
+  const descText = (item.description || item.product?.shortDescription || "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .trim();
+
+  doc.font("Helvetica").fontSize(9);
+  const nameHeight = doc.heightOfString(item.name || "", { width: 185 });
+  doc.font("Helvetica").fontSize(7);
+  const skuHeight = item.sku
+    ? doc.heightOfString(`SKU: ${item.sku}`, { width: 185 }) + 2
+    : 0;
+  const descHeight = descText
+    ? doc.heightOfString(descText, { width: 185 }) + 2
+    : 0;
+  const discountLabel =
+    item.discount > 0
+      ? `Discount: ${
+          item.discountType === "percentage"
+            ? `${item.discount}%`
+            : formatCurrency(item.discount, effectiveSettings)
+        }`
+      : "";
+  const discountHeight = discountLabel
+    ? doc.heightOfString(discountLabel, { width: 185 }) + 2
+    : 0;
+
+  const contentHeight =
+    nameHeight + skuHeight + descHeight + discountHeight + 16;
+  const rowHeight = Math.max(44, contentHeight);
+
+  if (rowIndex % 2 === 1) {
+    doc.rect(36, y, 523, rowHeight).fill("#F9FAFB");
+  }
+
+  // #
+  doc
+    .fillColor("#6B7280")
+    .fontSize(9)
+    .font("Helvetica")
+    .text((rowIndex + 1).toString(), 42, y + 10, { width: 22, align: "left" });
+
+  // Image or placeholder
+  if (imageBuffer) {
+    try {
+      doc.image(imageBuffer, 68, y + 6, {
+        fit: [32, 32],
+        align: "center",
+        valign: "center",
+      });
+    } catch {
+      doc.rect(68, y + 6, 32, 32).fill("#F3F4F6");
+    }
+  } else {
+    doc.rect(68, y + 6, 32, 32).fill("#F3F4F6");
+  }
+
+  // Description column
+  let textY = y + 8;
+  doc
+    .fillColor("#1F2937")
+    .fontSize(9)
+    .font("Helvetica")
+    .text(item.name || "", 114, textY, { width: 185, align: "left" });
+  textY += nameHeight + 2;
+
+  if (item.sku) {
+    doc
+      .fillColor("#6B7280")
+      .fontSize(7)
+      .font("Helvetica")
+      .text(`SKU: ${item.sku}`, 114, textY, { width: 185 });
+    textY += skuHeight;
+  }
+
+  if (descText) {
+    doc
+      .fillColor("#6B7280")
+      .fontSize(7)
+      .font("Helvetica")
+      .text(descText, 114, textY, { width: 185 });
+    textY += descHeight;
+  }
+
+  if (discountLabel) {
+    doc
+      .fillColor("#EF4444")
+      .fontSize(7)
+      .font("Helvetica")
+      .text(discountLabel, 114, textY, { width: 185 });
+  }
+
+  // Qty, Unit Price, Amount
+  doc
+    .fillColor("#1F2937")
+    .fontSize(9)
+    .font("Helvetica")
+    .text(String(item.quantity ?? ""), 303, y + 10, {
+      width: 45,
+      align: "right",
+    })
+    .text(formatCurrency(item.price, effectiveSettings), 352, y + 10, {
+      width: 90,
+      align: "right",
+    })
+    .font("Helvetica-Bold")
+    .text(formatCurrency(item.total, effectiveSettings), 446, y + 10, {
+      width: 107,
+      align: "right",
+    });
+
+  if (!isLast) {
+    doc
+      .strokeColor("#E5E7EB")
+      .lineWidth(0.5)
+      .moveTo(36, y + rowHeight)
+      .lineTo(559, y + rowHeight)
+      .stroke();
+  }
+
+  return y + rowHeight;
+};
+
 // Generate Quotation PDF
 const generateQuotationPDF = async (quotation, settings) => {
   return new Promise(async (resolve, reject) => {
     try {
+      const colors = getDocumentColors(settings);
+      const effectiveSettings = quotation?.currency?.code
+        ? {
+            ...(settings?.toObject ? settings.toObject() : settings),
+            currency: {
+              ...settings?.currency,
+              ...quotation.currency,
+            },
+          }
+        : settings;
+      const taxInfo = getTaxDisplay(quotation, settings);
+      const isForeign =
+        Boolean(quotation?.currency?.code) &&
+        quotation.currency.code !== (settings?.currency?.code || "");
+
+      const itemImageBuffers = await Promise.all(
+        (quotation.items || []).map((item) =>
+          fetchImageBuffer(
+            item.image ||
+              item.product?.images?.[0] ||
+              item.product?.thumbnail ||
+              null,
+          ),
+        ),
+      );
+
       const doc = new PDFDocument({
         size: "A4",
-        margin: 50,
+        margin: 36,
         bufferPages: true,
         info: {
-          Title: `Quotation #${quotation.quotationNumber}`,
+          Title: `Quotation ${quotation.quotationNumber}`,
           Author: settings?.storeName || "MerchPilot",
           Subject: "Quotation",
         },
@@ -825,396 +1088,478 @@ const generateQuotationPDF = async (quotation, settings) => {
       });
       doc.on("error", reject);
 
-      // Header Section
+      const LEFT = 36;
+      const RIGHT_EDGE = 559;
+      const PAGE_WIDTH = RIGHT_EDGE - LEFT;
+
+      // ── HEADER ──────────────────────────────────────────────────────────
       doc
-        .fillColor("#2563EB")
-        .fontSize(32)
+        .fillColor(colors.quotationPrimary)
+        .fontSize(18)
         .font("Helvetica-Bold")
-        .text("QUOTATION", 50, 50);
+        .text("QUOTATION", LEFT, 36, { characterSpacing: 2 });
+
+      doc
+        .fillColor("#6B7280")
+        .fontSize(9)
+        .font("Helvetica")
+        .text("Quotation No.", LEFT, 60);
+      doc
+        .fillColor(colors.quotationPrimary)
+        .fontSize(11)
+        .font("Helvetica-Bold")
+        .text(quotation.quotationNumber || "", LEFT, 71);
 
       // Logo (top right)
       if (settings?.logo) {
-        await embedLogo(doc, settings.logo, 450, 50, 100, 50);
+        await embedLogo(doc, settings.logo, 450, 40, 105, 44);
       }
 
-      // Quotation Number
+      // Blue header divider
+      doc.rect(LEFT, 96, PAGE_WIDTH, 2).fill(colors.quotationPrimary);
+
+      // ── SUPPLIER & CUSTOMER ─────────────────────────────────────────────
+      const boxTopY = 114;
+      let supplierY = boxTopY + 15;
+      let customerY = boxTopY + 15;
+      const colMid = LEFT + PAGE_WIDTH / 2;
+      const padding = 15;
+      const lineGap = 4;
+
+      // Supplier (left column)
       doc
         .fillColor("#6B7280")
-        .fontSize(12)
-        .font("Helvetica")
-        .text(`#${quotation.quotationNumber}`, 50, 90);
-
-      // Company Info (right side)
-      let companyY = 110;
-      doc
-        .fillColor("#111827")
-        .fontSize(11)
+        .fontSize(8)
         .font("Helvetica-Bold")
-        .text(settings?.storeName || "Company Name", 350, companyY, {
-          width: 200,
-          align: "right",
-        });
+        .text("SUPPLIER", LEFT + padding, supplierY);
+      supplierY = doc.y + lineGap + 2;
 
-      companyY += 15;
-      doc
-        .fillColor("#4B5563")
-        .fontSize(9)
-        .font("Helvetica")
-        .text(settings?.address?.street || "", 350, companyY, {
-          width: 200,
-          align: "right",
-        });
-
-      if (settings?.address?.city || settings?.address?.zip) {
-        companyY += 12;
-        doc.text(
-          `${settings?.address?.city || ""}${
-            settings?.address?.city && settings?.address?.zip ? ", " : ""
-          }${settings?.address?.zip || ""}`,
-          350,
-          companyY,
-          { width: 200, align: "right" },
-        );
-      }
-
-      if (settings?.contact?.phone) {
-        companyY += 12;
-        doc.text(`Phone: ${settings.contact.phone}`, 350, companyY, {
-          width: 200,
-          align: "right",
-        });
-      }
-
-      if (settings?.contact?.email) {
-        companyY += 12;
-        doc.text(settings.contact.email, 350, companyY, {
-          width: 200,
-          align: "right",
-        });
-      }
-
-      // Blue header line (moved down to accommodate company info)
-      const headerLineY = Math.max(companyY + 15, 175);
-      drawLine(doc, headerLineY, "#2563EB", 2);
-
-      // Bill To & Quotation Details
-      let detailsY = headerLineY + 20;
-
-      // Bill To (Left)
-      doc
-        .fillColor("#9CA3AF")
-        .fontSize(10)
-        .font("Helvetica-Bold")
-        .text("BILL TO", 50, detailsY);
-
-      detailsY += 18;
-      doc
-        .fillColor("#111827")
-        .fontSize(10)
-        .font("Helvetica-Bold")
-        .text(
-          `${quotation.customer?.salutation || ""}${
-            quotation.customer?.salutation ? " " : ""
-          }${quotation.customer?.firstName || ""} ${
-            quotation.customer?.lastName || ""
-          }`,
-          50,
-          detailsY,
-        );
-
-      if (quotation.customer?.billing?.company) {
-        detailsY += 15;
+      if (settings?.storeName) {
         doc
-          .fillColor("#1F2937")
-          .font("Helvetica")
-          .text(quotation.customer.billing.company, 50, detailsY);
-      }
-
-      if (quotation.customer?.billing?.address_1) {
-        detailsY += 15;
-        doc
-          .fillColor("#1F2937")
-          .font("Helvetica")
-          .text(quotation.customer.billing.address_1, 50, detailsY);
-      }
-
-      if (
-        quotation.customer?.billing?.city ||
-        quotation.customer?.billing?.postcode
-      ) {
-        detailsY += 12;
-        doc.text(
-          `${quotation.customer?.billing?.city || ""}${
-            quotation.customer?.billing?.city &&
-            quotation.customer?.billing?.postcode
-              ? ", "
-              : ""
-          }${quotation.customer?.billing?.postcode || ""}`,
-          50,
-          detailsY,
-        );
-      }
-
-      if (quotation.customer?.email) {
-        detailsY += 12;
-        doc.text(quotation.customer.email, 50, detailsY);
-      }
-
-      if (quotation.customer?.billing?.phone) {
-        detailsY += 12;
-        doc.text(quotation.customer.billing.phone, 50, detailsY);
-      }
-
-      if (quotation.customer?.taxNumber) {
-        const taxLabel =
-          settings?.tax?.label && settings.tax.label !== "Tax"
-            ? settings.tax.label
-            : "TIN";
-        detailsY += 12;
-        doc.text(`${taxLabel}: ${quotation.customer.taxNumber}`, 50, detailsY);
-      }
-
-      // Quotation Details (Right)
-      let quotationDetailsY = detailsY;
-      doc
-        .fillColor("#9CA3AF")
-        .fontSize(10)
-        .font("Helvetica-Bold")
-        .text("QUOTATION DETAILS", 350, quotationDetailsY);
-
-      quotationDetailsY += 18;
-      doc
-        .fillColor("#1F2937")
-        .fontSize(10)
-        .font("Helvetica")
-        .text("Date Issued:", 350, quotationDetailsY, {
-          width: 100,
-          align: "left",
-        });
-      doc
-        .font("Helvetica-Bold")
-        .text(
-          formatDate(quotation.quotationDate || quotation.createdAt, settings),
-          450,
-          quotationDetailsY,
-          { width: 100, align: "right" },
-        );
-
-      if (quotation.validUntil) {
-        quotationDetailsY += 15;
-        doc.font("Helvetica").text("Valid Until:", 350, quotationDetailsY, {
-          width: 100,
-          align: "left",
-        });
-        doc
+          .fillColor("#111827")
+          .fontSize(9)
           .font("Helvetica-Bold")
-          .text(
-            formatDate(quotation.validUntil, settings),
-            450,
-            quotationDetailsY,
-            { width: 100, align: "right" },
-          );
+          .text(settings.storeName, LEFT + padding, supplierY, {
+            width: PAGE_WIDTH / 2 - padding * 2,
+          });
+        supplierY = doc.y + 2;
       }
 
-      // Items Table
-      let tableY = Math.max(detailsY, quotationDetailsY) + 40;
+      const supplierDetails = [];
+      if (settings?.taxIdNo)
+        supplierDetails.push(`TIN/VAT: ${settings.taxIdNo}`);
+      if (settings?.registrationNo)
+        supplierDetails.push(`Reg: ${settings.registrationNo}`);
+      if (settings?.address?.street)
+        supplierDetails.push(settings.address.street);
+      const supplierCityZip = [settings?.address?.city, settings?.address?.zip]
+        .filter(Boolean)
+        .join(", ");
+      if (supplierCityZip) supplierDetails.push(supplierCityZip);
+      if (settings?.contact?.phone)
+        supplierDetails.push(`Tel: ${settings.contact.phone}`);
+      if (settings?.contact?.email)
+        supplierDetails.push(settings.contact.email);
 
-      // Check if we need a new page
-      if (tableY > 650) {
+      if (supplierDetails.length > 0) {
+        doc
+          .fillColor("#1F2937")
+          .fontSize(9)
+          .font("Helvetica")
+          .text(supplierDetails.join("\n"), LEFT + padding, supplierY, {
+            width: PAGE_WIDTH / 2 - padding * 2,
+            lineGap: 3,
+          });
+        supplierY = doc.y + lineGap;
+      } else {
+        supplierY += lineGap;
+      }
+
+      // Customer (right column)
+      doc
+        .fillColor("#6B7280")
+        .fontSize(8)
+        .font("Helvetica-Bold")
+        .text("CUSTOMER", colMid + padding, customerY);
+      customerY = doc.y + lineGap + 2;
+
+      const custName = [
+        quotation.customer?.salutation || "",
+        quotation.customer?.firstName || "",
+        quotation.customer?.lastName || "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      if (custName) {
+        doc
+          .fillColor("#111827")
+          .fontSize(9)
+          .font("Helvetica-Bold")
+          .text(custName, colMid + padding, customerY, {
+            width: PAGE_WIDTH / 2 - padding * 2,
+          });
+        customerY = doc.y + 2;
+      }
+
+      const customerDetails = [];
+      if (quotation.customer?.billing?.company)
+        customerDetails.push(quotation.customer.billing.company);
+      if (quotation.customer?.taxNumber)
+        customerDetails.push(`TIN/VAT: ${quotation.customer.taxNumber}`);
+      if (quotation.customer?.billing?.address_1)
+        customerDetails.push(quotation.customer.billing.address_1);
+      if (quotation.customer?.billing?.address_2)
+        customerDetails.push(quotation.customer.billing.address_2);
+
+      const customerCityPost = [
+        quotation.customer?.billing?.city,
+        quotation.customer?.billing?.state,
+        quotation.customer?.billing?.postcode,
+      ]
+        .filter(Boolean)
+        .join(", ");
+      if (customerCityPost) customerDetails.push(customerCityPost);
+      if (quotation.customer?.billing?.country)
+        customerDetails.push(quotation.customer.billing.country);
+      if (quotation.customer?.billing?.phone)
+        customerDetails.push(`Tel: ${quotation.customer.billing.phone}`);
+      if (quotation.customer?.email)
+        customerDetails.push(quotation.customer.email);
+
+      if (customerDetails.length > 0) {
+        doc
+          .fillColor("#1F2937")
+          .fontSize(9)
+          .font("Helvetica")
+          .text(customerDetails.join("\n"), colMid + padding, customerY, {
+            width: PAGE_WIDTH / 2 - padding * 2,
+            lineGap: 3,
+          });
+        customerY = doc.y + lineGap;
+      } else {
+        customerY += lineGap;
+      }
+
+      // Draw table borders for supplier/customer
+      const boxHeight =
+        Math.max(supplierY, customerY) - boxTopY + 15 - lineGap;
+      doc
+        .rect(LEFT, boxTopY, PAGE_WIDTH, boxHeight)
+        .lineWidth(0.5)
+        .strokeColor("#E5E7EB")
+        .stroke();
+      doc
+        .moveTo(colMid, boxTopY)
+        .lineTo(colMid, boxTopY + boxHeight)
+        .lineWidth(0.5)
+        .strokeColor("#E5E7EB")
+        .stroke();
+
+      // ── DETAILS BAR ──────────────────────────────────────────────────────
+      let detailsBarY = boxTopY + boxHeight + 18;
+      doc.rect(LEFT, detailsBarY, PAGE_WIDTH, 2).fill("#E5E7EB");
+      detailsBarY += 6;
+
+      const exchangeText = isForeign
+        ? `${quotation.currency.code}${
+            quotation.exchangeRate?.rate > 0
+              ? ` (1 ${quotation.currency.code} = ${quotation.exchangeRate.rate} ${
+                  quotation.exchangeRate.baseCurrency ||
+                  settings?.currency?.code ||
+                  "LKR"
+                })`
+              : ""
+          }`
+        : null;
+
+      const detailsData = [
+        {
+          label: "Date Issued",
+          value: formatDate(
+            quotation.quotationDate || quotation.createdAt,
+            settings,
+          ),
+        },
+        quotation.validUntil
+          ? {
+              label: "Valid Until",
+              value: formatDate(quotation.validUntil, settings),
+            }
+          : null,
+        exchangeText
+          ? {
+              label: "Currency",
+              value: exchangeText,
+              color: "#d97706",
+            }
+          : null,
+      ].filter(Boolean);
+
+      const cellWidth = PAGE_WIDTH / Math.max(detailsData.length, 2);
+      detailsData.forEach((detail, i) => {
+        const cx = LEFT + i * cellWidth;
+        doc
+          .fillColor("#6B7280")
+          .fontSize(7)
+          .font("Helvetica")
+          .text(detail.label.toUpperCase(), cx, detailsBarY, {
+            width: cellWidth - 5,
+          });
+        doc
+          .fillColor(detail.color || "#111827")
+          .fontSize(9)
+          .font("Helvetica-Bold")
+          .text(detail.value, cx, detailsBarY + 10, { width: cellWidth - 5 });
+      });
+
+      let tableY = detailsBarY + 34;
+      doc.rect(LEFT, tableY - 4, PAGE_WIDTH, 1).fill("#E5E7EB");
+      tableY += 4;
+
+      // ── ITEMS TABLE ──────────────────────────────────────────────────────
+      if (tableY > 600) {
         doc.addPage();
-        tableY = 50;
+        tableY = 36;
       }
 
-      tableY = addTableHeader(doc, tableY, settings);
+      tableY = addQuotationTableHeader(doc, tableY, colors.quotationPrimary);
 
-      quotation.items.forEach((item, index) => {
-        // Check if we need a new page for this item
-        if (tableY > 700) {
+      (quotation.items || []).forEach((item, index) => {
+        if (tableY > 680) {
           doc.addPage();
-          tableY = 50;
-          tableY = addTableHeader(doc, tableY, settings);
+          tableY = 36;
+          tableY = addQuotationTableHeader(
+            doc,
+            tableY,
+            colors.quotationPrimary,
+          );
         }
-
-        tableY = addTableRow(
+        tableY = addQuotationTableRow(
           doc,
           tableY,
           item,
-          settings,
+          itemImageBuffers[index],
+          effectiveSettings,
           index === quotation.items.length - 1,
+          index,
         );
       });
 
-      // Totals Section
-      tableY += 20;
-      drawLine(doc, tableY - 10, "#E5E7EB", 1);
-
-      const totalsX = 420;
-
-      // Subtotal
-      doc
-        .fillColor("#6B7280")
-        .fontSize(10)
-        .font("Helvetica")
-        .text("Subtotal", totalsX - 100, tableY, {
-          width: 100,
-          align: "right",
-        });
-      doc
-        .fillColor("#111827")
-        .font("Helvetica")
-        .text(formatCurrency(quotation.subtotal, settings), totalsX, tableY, {
-          width: 125,
-          align: "right",
-        });
-
-      // Tax (always shown, even at 0%)
-      const quotationTaxInfo = getTaxDisplay(quotation, settings);
-      tableY += 20;
-      doc
-        .fillColor("#6B7280")
-        .text(quotationTaxInfo.lineLabel, totalsX - 150, tableY, {
-          width: 150,
-          align: "right",
-        });
-      doc
-        .fillColor("#111827")
-        .text(formatCurrency(quotation.tax || 0, settings), totalsX, tableY, {
-          width: 125,
-          align: "right",
-        });
-
-      // Discount
-      if (quotation.discount > 0) {
-        tableY += 20;
-        doc.fillColor("#6B7280").text("Discount", totalsX - 100, tableY, {
-          width: 100,
-          align: "right",
-        });
-        doc
-          .fillColor("#EF4444")
-          .text(
-            `-${formatCurrency(quotation.discount, settings)}`,
-            totalsX,
-            tableY,
-            { width: 125, align: "right" },
-          );
-      }
-
-      // Grand Total
-      tableY += 25;
-      drawLine(doc, tableY - 5, "#2563EB", 2);
-      doc
-        .fillColor("#111827")
-        .fontSize(12)
-        .font("Helvetica-Bold")
-        .text("Total", totalsX - 100, tableY, { width: 100, align: "right" });
-      doc
-        .fillColor("#2563EB")
-        .fontSize(14)
-        .text(formatCurrency(quotation.total, settings), totalsX, tableY, {
-          width: 125,
-          align: "right",
-        });
-
-      // Notes
-      if (quotation.notes) {
-        tableY += 40;
-
-        // Check if we need a new page for notes
-        if (tableY > 650) {
-          doc.addPage();
-          tableY = 50;
-        }
-
-        doc
-          .roundedRect(50, tableY, 500, 60, 4)
-          .fill("#F9FAFB")
-          .fillColor("#9CA3AF")
-          .fontSize(10)
-          .font("Helvetica-Bold")
-          .text("NOTES", 60, tableY + 10);
-
-        doc
-          .fillColor("#1F2937")
-          .fontSize(10)
-          .font("Helvetica")
-          .text(quotation.notes, 60, tableY + 25, {
-            width: 480,
-            align: "left",
-          });
-
-        tableY += 70;
-      }
-
-      // Check if we need a new page for footer (needs ~80 points)
-      if (tableY > 670) {
+      // ── TOTALS ───────────────────────────────────────────────────────────
+      if (tableY > 640) {
         doc.addPage();
+        tableY = 36;
+      }
+      tableY += 20;
+      doc
+        .strokeColor("#E5E7EB")
+        .lineWidth(1)
+        .moveTo(LEFT, tableY)
+        .lineTo(RIGHT_EDGE, tableY)
+        .stroke();
+      tableY += 16;
+
+      const totalsLeft = RIGHT_EDGE - 220;
+
+      const drawTotalRow = (
+        label,
+        value,
+        bold = false,
+        valueColor = "#111827",
+      ) => {
+        doc
+          .fillColor("#6B7280")
+          .fontSize(9)
+          .font(bold ? "Helvetica-Bold" : "Helvetica")
+          .text(label, totalsLeft, tableY, { width: 110, align: "left" });
+        doc
+          .fillColor(valueColor)
+          .fontSize(9)
+          .font(bold ? "Helvetica-Bold" : "Helvetica")
+          .text(value, totalsLeft + 110, tableY, {
+            width: 110,
+            align: "right",
+          });
+        tableY = doc.y + 6;
+      };
+
+      drawTotalRow(
+        "Subtotal",
+        formatCurrency(quotation.subtotal, effectiveSettings),
+      );
+
+      drawTotalRow(
+        taxInfo.lineLabel,
+        formatCurrency(quotation.tax || 0, effectiveSettings),
+      );
+
+      if (quotation.discount > 0) {
+        drawTotalRow(
+          "Discount",
+          `-${formatCurrency(quotation.discount, effectiveSettings)}`,
+          false,
+          "#EF4444",
+        );
       }
 
-      // Footer (only once at the bottom)
-      drawLine(doc, 750, "#E5E7EB", 1);
+      if (quotation.deliveryCharge > 0) {
+        drawTotalRow(
+          "Delivery Charge",
+          formatCurrency(quotation.deliveryCharge, effectiveSettings),
+        );
+      }
+
+      // Grand Total bar
+      tableY += 8;
+      doc.rect(totalsLeft, tableY, 220, 22).fill(colors.quotationPrimary);
+      doc
+        .fillColor("#FFFFFF")
+        .fontSize(10)
+        .font("Helvetica-Bold")
+        .text("Total Amount", totalsLeft + 6, tableY + 6, {
+          width: 110,
+          align: "left",
+        });
+      doc
+        .fillColor("#FFFFFF")
+        .fontSize(11)
+        .text(
+          formatCurrency(quotation.total, effectiveSettings),
+          totalsLeft + 110,
+          tableY + 5,
+          { width: 110, align: "right" },
+        );
+      tableY += 36;
+
+      // ── TOTAL IN WORDS ────────────────────────────────────────────────────
+      if (tableY > 700) {
+        doc.addPage();
+        tableY = 36;
+      }
+      tableY += 8;
+      doc.rect(LEFT, tableY, PAGE_WIDTH, 20).fill(colors.amountWordsBg);
+      doc
+        .fillColor("#6B7280")
+        .fontSize(7)
+        .font("Helvetica")
+        .text("TOTAL AMOUNT IN WORDS:", LEFT + 6, tableY + 6);
+      doc
+        .fillColor(colors.quotationPrimary)
+        .fontSize(8)
+        .font("Helvetica-Bold")
+        .text(
+          amountInWords(quotation.total, effectiveSettings),
+          LEFT + 130,
+          tableY + 6,
+          {
+            width: PAGE_WIDTH - 136,
+          },
+        );
+      tableY += 26;
+
+      // ── NOTES & TERMS ────────────────────────────────────────────────────
+      const hasContent = (html) => {
+        if (!html) return false;
+        return (
+          html
+            .replace(/<[^>]*>/g, "")
+            .replace(/&nbsp;/g, " ")
+            .trim() !== ""
+        );
+      };
+
+      const sections = [
+        { title: "NOTES", content: quotation.notes },
+        { title: "TERMS & CONDITIONS", content: quotation.terms },
+        { title: "DELIVERY NOTE", content: quotation.deliveryNote },
+      ].filter((s) => hasContent(s.content));
+
+      if (sections.length > 0) {
+        tableY += 16;
+
+        sections.forEach((section) => {
+          if (tableY > 700) {
+            doc.addPage();
+            tableY = 36;
+          }
+
+          doc.rect(LEFT, tableY, PAGE_WIDTH, 14).fill("#F3F4F6");
+          doc
+            .fillColor("#6B7280")
+            .fontSize(8)
+            .font("Helvetica-Bold")
+            .text(section.title, LEFT + 6, tableY + 4);
+          tableY += 18;
+
+          doc
+            .fillColor("#1F2937")
+            .fontSize(8)
+            .font("Helvetica")
+            .text(
+              section.content
+                .replace(/<[^>]*>/g, "")
+                .replace(/&nbsp;/g, " ")
+                .trim(),
+              LEFT,
+              tableY,
+              {
+                width: PAGE_WIDTH,
+                align: "left",
+              },
+            );
+
+          tableY = doc.y + 16;
+        });
+      }
+
+      // ── FOOTER ───────────────────────────────────────────────────────────
+      const footerY = 790;
+      doc
+        .strokeColor("#E5E7EB")
+        .lineWidth(0.5)
+        .moveTo(LEFT, footerY)
+        .lineTo(RIGHT_EDGE, footerY)
+        .stroke();
 
       doc
         .fillColor("#9CA3AF")
-        .fontSize(8)
+        .fontSize(7)
         .font("Helvetica")
-        .text("Thank you for your interest!", 50, 760, {
-          width: 500,
+        .text("Thank you for your business!", LEFT, footerY + 6, {
+          width: PAGE_WIDTH,
           align: "center",
         });
 
-      // Bank Details
       if (settings?.bank?.accountName) {
         doc
-          .fontSize(8)
+          .fontSize(7)
           .font("Helvetica-Bold")
-          .text("Bank Details:", 50, 775, { width: 500, align: "center" });
-
-        doc
+          .text("Bank Details: ", LEFT, footerY + 16, { continued: true })
           .font("Helvetica")
           .text(
-            `${settings.bank.bankName || ""}${
-              settings.bank.branch ? `, ${settings.bank.branch}` : ""
-            }`,
-            50,
-            787,
-            { width: 500, align: "center" },
+            `${settings.bank.bankName || ""}${settings.bank.branch ? ", " + settings.bank.branch : ""} | ` +
+              `Account: ${settings.bank.accountName} - ${settings.bank.accountNumber}` +
+              (settings.bank.swiftCode
+                ? ` | Swift: ${settings.bank.swiftCode}`
+                : ""),
+            { width: PAGE_WIDTH },
           );
-
-        doc.text(
-          `Account Name: ${settings.bank.accountName} | Account No: ${settings.bank.accountNumber}`,
-          50,
-          797,
-          { width: 500, align: "center" },
-        );
-
-        if (settings.bank.swiftCode) {
-          doc.text(`Swift Code: ${settings.bank.swiftCode}`, 50, 807, {
-            width: 500,
-            align: "center",
-          });
-        }
       }
 
-      // Add page numbers
       const range = doc.bufferedPageRange();
       for (let i = range.start; i < range.start + range.count; i++) {
         doc.switchToPage(i);
         const oldBottomMargin = doc.page.margins.bottom;
         doc.page.margins.bottom = 0;
         doc
-          .fontSize(8)
           .fillColor("#9CA3AF")
-          .text(`Page ${i + 1} of ${range.count}`, 50, doc.page.height - 30, {
-            align: "center",
-          });
-        doc
-          .fontSize(7)
+          .fontSize(6.5)
           .text(
-            "This is a computer-generated document. No signature is required.",
-            50,
-            doc.page.height - 20,
-            { align: "center" },
+            `This is a computer-generated Quotation. No signature is required. | Page ${i + 1} of ${range.count}`,
+            LEFT,
+            doc.page.height - 18,
+            { width: PAGE_WIDTH, align: "center" },
           );
         doc.page.margins.bottom = oldBottomMargin;
       }

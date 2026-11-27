@@ -44,12 +44,10 @@ const QuotationView = () => {
       // Convert product images to base64 for items
       const itemsWithImages = await Promise.all(
         (quotationData.items || []).map(async (item) => {
-          if (item.product?.images && item.product.images.length > 0) {
+          const imageUrl = item.product?.images?.[0] || item.product?.thumbnail;
+          if (imageUrl) {
             try {
-              const base64Image = await urlToBase64(
-                item.product.images[0],
-                token,
-              );
+              const base64Image = await urlToBase64(imageUrl, token);
               return { ...item, image: base64Image };
             } catch (error) {
               console.error(
