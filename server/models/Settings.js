@@ -58,8 +58,11 @@ const settingsSchema = new mongoose.Schema(
     },
     documentColors: {
       invoicePrimary: { type: String, default: "#1E3A8A" },
+      invoiceAccent: { type: String, default: "#1E3A8A" },
       proformaPrimary: { type: String, default: "#065F46" },
+      proformaAccent: { type: String, default: "#065F46" },
       quotationPrimary: { type: String, default: "#1E3A8A" },
+      quotationAccent: { type: String, default: "#1E3A8A" },
       amountWordsBg: { type: String, default: "#EFF6FF" },
     },
     wooCommerce: {

@@ -430,6 +430,9 @@ const InvoicePDF = ({ invoice, settings }) => {
   const headerColor = isProforma
     ? colors.proformaPrimary
     : colors.invoicePrimary;
+  const dividerColor = isProforma
+    ? colors.proformaAccent
+    : colors.invoiceAccent;
   const amountPaid = invoice.amountPaid || 0;
   const balanceDue =
     invoice.balanceDue !== undefined
@@ -513,7 +516,7 @@ const InvoicePDF = ({ invoice, settings }) => {
         <View
           style={[
             isProforma ? styles.headerDividerProforma : styles.headerDivider,
-            { backgroundColor: headerColor },
+            { backgroundColor: dividerColor },
           ]}
         />
 

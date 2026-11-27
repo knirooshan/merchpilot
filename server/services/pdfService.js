@@ -5,8 +5,11 @@ const { getTaxDisplay } = require("../utils/taxDisplay");
 
 const DEFAULT_DOCUMENT_COLORS = {
   invoicePrimary: "#1E3A8A",
+  invoiceAccent: "#1E3A8A",
   proformaPrimary: "#065F46",
+  proformaAccent: "#065F46",
   quotationPrimary: "#1E3A8A",
+  quotationAccent: "#1E3A8A",
   amountWordsBg: "#EFF6FF",
 };
 
@@ -37,13 +40,25 @@ const getDocumentColors = (settings) => {
       raw.invoicePrimary,
       DEFAULT_DOCUMENT_COLORS.invoicePrimary,
     ),
+    invoiceAccent: normalizeHexColor(
+      raw.invoiceAccent,
+      DEFAULT_DOCUMENT_COLORS.invoiceAccent,
+    ),
     proformaPrimary: normalizeHexColor(
       raw.proformaPrimary,
       DEFAULT_DOCUMENT_COLORS.proformaPrimary,
     ),
+    proformaAccent: normalizeHexColor(
+      raw.proformaAccent,
+      DEFAULT_DOCUMENT_COLORS.proformaAccent,
+    ),
     quotationPrimary: normalizeHexColor(
       raw.quotationPrimary,
       DEFAULT_DOCUMENT_COLORS.quotationPrimary,
+    ),
+    quotationAccent: normalizeHexColor(
+      raw.quotationAccent,
+      DEFAULT_DOCUMENT_COLORS.quotationAccent,
     ),
     amountWordsBg: normalizeHexColor(
       raw.amountWordsBg,
@@ -410,6 +425,12 @@ const generateInvoicePDF = async (invoice, settings) => {
       if (settings?.logo) {
         await embedLogo(doc, settings.logo, 450, 40, 105, 50);
       }
+
+      // Header divider line
+      const dividerColor = isProforma
+        ? colors.proformaAccent
+        : colors.invoiceAccent;
+      doc.rect(LEFT, 104, PAGE_WIDTH, 2).fill(dividerColor);
 
       // ── SUPPLIER & PURCHASER ─────────────────────────────────────────────
       let boxTopY = 120; // Increased spacing below header
@@ -1116,7 +1137,7 @@ const generateQuotationPDF = async (quotation, settings) => {
       }
 
       // Blue header divider
-      doc.rect(LEFT, 96, PAGE_WIDTH, 2).fill(colors.quotationPrimary);
+      doc.rect(LEFT, 96, PAGE_WIDTH, 2).fill(colors.quotationAccent);
 
       // ── SUPPLIER & CUSTOMER ─────────────────────────────────────────────
       const boxTopY = 114;
@@ -1276,15 +1297,16 @@ const generateQuotationPDF = async (quotation, settings) => {
       const detailsData = [
         {
           label: "Date Issued",
-          value: formatDate(
-            quotation.quotationDate || quotation.createdAt,
-            settings,
-          ),
+          value: formatDate(quotation.quotationDate || quotation.createdAt, {
+            dateTime: { dateFormat: "MM/DD/YYYY" },
+          }),
         },
         quotation.validUntil
           ? {
               label: "Valid Until",
-              value: formatDate(quotation.validUntil, settings),
+              value: formatDate(quotation.validUntil, {
+                dateTime: { dateFormat: "MM/DD/YYYY" },
+              }),
             }
           : null,
         exchangeText

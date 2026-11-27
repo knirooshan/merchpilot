@@ -488,7 +488,7 @@ const EditInvoice = () => {
                 className="w-24 bg-slate-950 border border-slate-700 text-white rounded px-2 py-1 text-right"
               />
             </div>
-            <div className="flex justify-between w-72 text-lg font-bold pt-2 border-t">
+            <div className="flex justify-between w-72 text-lg font-bold pt-2 border-t border-slate-800 text-white">
               <span>Total:</span>
               <span>{formatCurrency(total, effectiveSettings)}</span>
             </div>
